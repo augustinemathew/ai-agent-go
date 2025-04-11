@@ -18,44 +18,40 @@ func NewRequestUserInputExecutor() *RequestUserInputExecutor {
 // Execute handles the request for user input specified in the RequestUserInput command.
 // It expects the cmd argument to be of type RequestUserInput.
 // The actual user interaction mechanism is assumed to be handled elsewhere;
-// this executor primarily signals the need for input.
-// Returns a channel for results and an error if the command type is wrong or execution setup fails.
-// The passed context is currently unused but included for interface compliance.
+// this method just returns the prompt message.
 func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	inputCmd, ok := cmd.(RequestUserInput)
+	// Type assertion to ensure we have a RequestUserInput command
+	userInputCmd, ok := cmd.(RequestUserInput)
 	if !ok {
-		return nil, fmt.Errorf("invalid command type: expected RequestUserInput, got %T", cmd)
+		return nil, fmt.Errorf("invalid command type: %T", cmd)
 	}
 
+	// Create a channel to receive the result
 	results := make(chan OutputResult, 1)
 
+	// Start a goroutine to handle the command execution
 	go func() {
 		defer close(results)
 
-		// Check for immediate cancellation before starting work
+		// Check if context is already cancelled
 		select {
 		case <-ctx.Done():
 			results <- OutputResult{
-				CommandID:   inputCmd.CommandID,
+				CommandID:   userInputCmd.CommandID,
 				CommandType: CmdRequestUserInput,
-				Status:      StatusFailed,
-				Message:     "User input request cancelled before start.",
-				Error:       ctx.Err().Error(),
+				Status:      StatusSucceeded,
+				Message:     userInputCmd.Prompt,
 			}
 			return
 		default:
 		}
 
-		// TODO: Implement logic to trigger the user input prompt (e.g., send event).
-		// The actual input collection happens elsewhere.
-		// This executor might just confirm the request was sent.
-		// Context check might be relevant if dispatching the request is slow.
+		// Return the prompt message as the result
 		results <- OutputResult{
-			CommandID:   inputCmd.CommandID,
+			CommandID:   userInputCmd.CommandID,
 			CommandType: CmdRequestUserInput,
-			Status:      StatusFailed, // Or SUCCEEDED if the request dispatch is the success criteria
-			Message:     "User input request handling not yet implemented.",
-			Error:       "Not implemented",
+			Status:      StatusSucceeded,
+			Message:     userInputCmd.Prompt,
 		}
 	}()
 
