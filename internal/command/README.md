@@ -9,6 +9,15 @@ This package defines and executes various commands asynchronously within the AI 
 3.  **Registry**: Maps `CommandType` values to their corresponding `CommandExecutor` implementations.
 4.  **Results**: The `OutputResult` struct standardizes the format for reporting the outcome of a command execution, including status, messages, errors, and command-specific data. Results are sent over a channel.
 
+## Implementation Details
+
+The package implements several important design patterns:
+
+1. **Context-Aware Goroutines**: All executor implementations properly respect context cancellation, allowing for graceful cleanup when operations are interrupted.
+2. **Context-Aware WaitGroups**: A specialized pattern is implemented to make WaitGroup operations respect context cancellation.
+3. **Clean Error Handling**: Standardized error reporting throughout the system with appropriate status codes.
+4. **Functional Decomposition**: Each executor is broken down into smaller, focused functions for better maintainability.
+
 ## Command Reference
 
 This section details the specific commands supported by the package, including their purpose, input JSON structure, and example output JSON upon success.
