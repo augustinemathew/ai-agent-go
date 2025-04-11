@@ -19,8 +19,6 @@ func NewFileReadExecutor() *FileReadExecutor {
 	return &FileReadExecutor{}
 }
 
-const fileReadChunkSize = 10 * 1024 // 10KB chunk size
-
 // Execute reads the file specified in the FileReadCommand, streaming its content.
 // It expects the cmd argument to be of type FileReadCommand.
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
