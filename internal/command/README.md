@@ -71,48 +71,39 @@ The intermediate `RUNNING` messages' `resultData` (stdout/stderr) is concatenate
 
 ### `FILE_READ`
 
-Reads the content of a file (`FileReadCommand`).
+Reads the contents of a file, optionally from specific line numbers.
 
 **Input JSON:**
 
 ```json
 {
-  "command_id": "unique-id-2",
-  "description": "Read config file",
-  "file_path": "/path/to/your/config.yaml" // Path to the file to read
+  "command_id": "read-1",
+  "description": "Read file contents",
+  "commandType": "FILE_READ",
+  "file_path": "/path/to/file.txt",
+  "start_line": 2,  // Optional: 1-based line number to start reading from (0 means start from beginning)
+  "end_line": 4     // Optional: 1-based line number to read until (0 means read until end)
 }
 ```
 
-**Output JSON (Success Example - Initial Read):**
-
-This example shows the *final combined* `OutputResult` after using `CombineOutputResults`.
-The intermediate `RUNNING` messages' `resultData` (file content chunks) is concatenated here.
+**Example Output JSON:**
 
 ```json
 {
-  "command_id": "happy-read-1",
+  "command_id": "happy-read-3",
   "commandType": "FILE_READ",
   "status": "SUCCEEDED",
   "message": "File reading finished successfully in 0s.",
-  "error": "",
-  "resultData": "Hello from FileWrite!\nThis is a test file."
+  "resultData": "This is a test file.\n"
 }
 ```
 
-**Output JSON (Success Example - After Patch):**
-
-This shows the result of reading the same file after it was patched.
-
-```json
-{
-  "command_id": "happy-read-2",
-  "commandType": "FILE_READ",
-  "status": "SUCCEEDED",
-  "message": "File reading finished successfully in 0s.",
-  "error": "",
-  "resultData": "Greetings from PatchFile!\nThis is a test file."
-}
-```
+**Notes:**
+- If `start_line` is 0 or omitted, reading starts from the beginning of the file
+- If `end_line` is 0 or omitted, reading continues until the end of the file
+- Line numbers are 1-based (first line is line 1)
+- Invalid line numbers (negative) will result in a failure
+- If `start_line` is after `end_line`, the command will fail
 
 ---
 
@@ -402,36 +393,4 @@ This function reads all `OutputResult` messages from the channel until it either
 
 1.  **Command Received**: The system receives a command request, typically as JSON, defining the `commandType` and its specific parameters.
 2.  **Parsing**: The JSON is unmarshalled into the corresponding Go command struct (e.g., `BashExecCommand`, `FileReadCommand`).
-3.  **Executor Lookup**: The `CommandRegistry` is used to find the `CommandExecutor` registered for the command's `CommandType`.
-4.  **Execution Start**: The `Execute` method of the retrieved executor is called with the command struct.
-5.  **Asynchronous Operation**: The executor starts the command's operation (e.g., running a shell command, reading a file) in a separate goroutine.
-6.  **Result Streaming**: The executor sends `OutputResult` messages back through the returned channel:
-    *   May send initial `RUNNING` status messages.
-    *   May send intermediate `RUNNING` messages with partial data (`resultData`) for streaming commands (like `BASH_EXEC`, `FILE_READ`).
-    *   Sends a final `SUCCEEDED` or `FAILED` status message.
-7.  **Channel Closure**: The executor closes the results channel once the command is fully completed or has irrecoverably failed.
-8.  **Result Consumption**: The part of the system that initiated the command reads results from the channel until it's closed.
-
-## Concurrency
-
-*   The `MapRegistry` implementation is safe for concurrent use (reads via `GetExecutor` and writes via `Register`).
-*   `CommandExecutor` implementations are expected to be safe for concurrent execution. Each call to `Execute` should handle its own state and operate independently, likely launching new goroutines for the actual work. Ensure any shared resources accessed by executors are properly protected (e.g., using mutexes).
-
-## Error Handling
-
-*   **Initiation Errors**: The `Execute` method can return an immediate error if the command cannot be started (e.g., invalid command struct type assertion, invalid parameters detected upfront).
-*   **Execution Errors**: Errors occurring *during* the execution of the command are reported within the `OutputResult` struct sent over the results channel. The `status` field will be `FAILED`, and the `error` field will contain details. For commands like `BASH_EXEC`, stderr output might appear in `resultData` during `RUNNING` status *and* potentially be summarized in the final `error` field if the command exits non-zero.
-
-## Extensibility
-
-Adding support for a new command type involves the following steps:
-
-1.  **Define Type**: Add a new constant to the `CommandType` enum in `types.go`.
-2.  **Define Struct**: Create a new struct in `types.go` for the command's parameters, embedding `BaseCommand`.
-3.  **Implement Executor**: Create a new Go file (e.g., `mynewcommand_executor.go`) and implement the `CommandExecutor` interface for your new command type. This involves:
-    *   Defining a struct for your executor (it might hold configuration like buffer sizes, API clients, etc.).
-    *   Implementing the `Execute` method, which takes `context.Context` and `any` (your command struct), performs the logic, and returns a `<-chan OutputResult`. Remember to handle context cancellation.
-4.  **Register Executor**: In your application's initialization code, create an instance of your new executor and register it with the `CommandRegistry` using the new `CommandType`.
-5.  **Update JSON Handling**: Ensure any code responsible for receiving/sending command JSON (e.g., API handlers) is updated to handle the new command struct and its corresponding `CommandType`.
-6.  **Add Tests**: Write unit tests for your new executor (`mynewcommand_executor_test.go`).
-7.  **Update Documentation**: Add the new command type, its JSON structure, and result format details to this README (under the "Command Reference" section).
+3.  **Executor Lookup**: The `CommandRegistry` is used to find the `

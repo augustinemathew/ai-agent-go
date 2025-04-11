@@ -53,6 +53,10 @@ type FileReadCommand struct {
 	BaseCommand
 	// FilePath is the path to the file that needs to be read.
 	FilePath string `json:"file_path"`
+	// StartLine is the 1-based line number to start reading from. If 0, starts from beginning.
+	StartLine int `json:"start_line,omitempty"`
+	// EndLine is the 1-based line number to read until. If 0, reads until EOF.
+	EndLine int `json:"end_line,omitempty"`
 }
 
 // FileWriteCommand defines the structure for writing content to a file.

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Helper function to create a temporary file for patch tests
@@ -83,35 +85,35 @@ func TestPatchFileExecutor_Execute_Success(t *testing.T) {
 			name:            "Simple Add",
 			initialContent:  "line1\nline3\n",
 			patch:           "--- a/test.txt\n+++ b/test.txt\n@@ -1,2 +1,3 @@\n line1\n+line2\n line3\n",
-			expectedContent: "line1\nline2\nline3",
+			expectedContent: "line1\nline2\nline3\n",
 			commandID:       "patch-add-1",
 		},
 		{
 			name:            "Simple Delete",
 			initialContent:  "line1\nline2\nline3\n",
 			patch:           "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,2 @@\n line1\n-line2\n line3\n",
-			expectedContent: "line1\nline3",
+			expectedContent: "line1\nline3\n",
 			commandID:       "patch-del-1",
 		},
 		{
 			name:            "Create File",
 			initialContent:  "", // File does not exist initially
 			patch:           "--- /dev/null\n+++ b/newfile.txt\n@@ -0,0 +1,2 @@\n+Newline 1\n+Newline 2\n",
-			expectedContent: "Newline 1\nNewline 2",
+			expectedContent: "Newline 1\nNewline 2\n",
 			commandID:       "patch-create-1",
 		},
 		{
 			name:            "Empty Patch",
 			initialContent:  "line1\nline2\n",
 			patch:           "",               // Empty patch string
-			expectedContent: "line1\nline2\n", // Adjusted to reflect current join behavior
+			expectedContent: "line1\nline2\n", // Should preserve original content exactly
 			commandID:       "patch-empty-1",
 		},
 		{
 			name:            "Whitespace Patch",
 			initialContent:  "line1\nline2\n",
 			patch:           " \t\n ",         // Whitespace patch string
-			expectedContent: "line1\nline2\n", // Adjusted to reflect current join behavior
+			expectedContent: "line1\nline2\n", // Should preserve original content exactly
 			commandID:       "patch-ws-1",
 		},
 	}
@@ -217,7 +219,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 				Patch:       "--- a/test_fail_exists.txt\n+++ b/test_fail_exists.txt\n@@ -1,3 +1,3 @@\n line1\n-WRONG_LINE\n+correct_line\n line3\n",
 			},
 			expectedStatus: StatusFailed,
-			expectedError:  errHunkMismatch.Error(),
+			expectedError:  "context mismatch",
 			initialErr:     false,
 		},
 		{
@@ -228,7 +230,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 				Patch:       "--- a/test_fail_nonexist.txt\n+++ b/test_fail_nonexist.txt\n@@ -1,1 +1,1 @@\n-line1\n+newline1\n", // Requires line1 to exist
 			},
 			expectedStatus: StatusFailed,
-			expectedError:  errHunkMismatch.Error(), // Fails because context ' ' or '-' line won't match empty file
+			expectedError:  "context mismatch",
 			initialErr:     false,
 		},
 		{
@@ -239,7 +241,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 				Patch:       "this is not a valid patch format",
 			},
 			expectedStatus: StatusFailed,
-			expectedError:  errNoFilePatch.Error(), // Parser returns no diffs
+			expectedError:  "failed to parse patch",
 			initialErr:     false,
 		},
 		{
@@ -250,7 +252,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 				Patch:       "this is not a valid patch format",
 			},
 			expectedStatus: StatusFailed,
-			expectedError:  errNoFilePatch.Error(), // Parser returns no diffs
+			expectedError:  "failed to parse patch",
 			initialErr:     false,
 		},
 		{
@@ -261,7 +263,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 				Patch:       "--- a/file1.txt\n+++ b/file1.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n--- a/file2.txt\n+++ b/file2.txt\n@@ -1,1 +1,1 @@\n-c\n+d\n",
 			},
 			expectedStatus: StatusFailed,
-			expectedError:  errMultiFilePatch.Error(),
+			expectedError:  "patch contains multiple file diffs",
 			initialErr:     false,
 		},
 		{
@@ -272,7 +274,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 				Patch:       "--- a/file1.txt\n+++ b/file1.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n--- a/file2.txt\n+++ b/file2.txt\n@@ -1,1 +1,1 @@\n-c\n+d\n",
 			},
 			expectedStatus: StatusFailed,
-			expectedError:  errMultiFilePatch.Error(),
+			expectedError:  "patch contains multiple file diffs",
 			initialErr:     false,
 		},
 		{
@@ -453,4 +455,85 @@ func (or OutputResult) UnwrapError() error {
 	}
 	// Add other known error string mappings if necessary
 	return errors.New(or.Error) // Return a basic error wrapping the string
+}
+
+func TestApplyPatch_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name          string
+		original      string
+		patch         string
+		expected      string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name:     "empty_file_add_content",
+			original: "",
+			patch:    "--- /dev/null\n+++ b/test.txt\n@@ -0,0 +1,2 @@\n+Line 1\n+Line 2\n",
+			expected: "Line 1\nLine 2\n",
+		},
+		{
+			name:     "empty_file_add_empty_content",
+			original: "",
+			patch:    "--- /dev/null\n+++ b/test.txt\n@@ -0,0 +1 @@\n+\n",
+			expected: "\n",
+		},
+		{
+			name:     "delete_entire_file",
+			original: "Line 1\nLine 2\n",
+			patch:    "--- a/test.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-Line 1\n-Line 2\n",
+			expected: "",
+		},
+		{
+			name:     "delete_middle_lines",
+			original: "Line 1\nLine 2\nLine 3\nLine 4\n",
+			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -1,4 +1,2 @@\n Line 1\n-Line 2\n-Line 3\n Line 4\n",
+			expected: "Line 1\nLine 4\n",
+		},
+		{
+			name:          "invalid_patch_format",
+			original:      "test",
+			patch:         "invalid patch format",
+			expectError:   true,
+			errorContains: "failed to parse patch",
+		},
+		{
+			name:          "mismatched_context",
+			original:      "Line 1\nLine 2\n",
+			patch:         "--- a/test.txt\n+++ b/test.txt\n@@ -1,2 +1,2 @@\n Line 1\n-Wrong Line\n+New Line\n",
+			expectError:   true,
+			errorContains: "context mismatch",
+		},
+		{
+			name:     "multiple_hunks",
+			original: "Line 1\nLine 2\nLine 3\nLine 4\n",
+			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -1,2 +1,2 @@\n Line 1\n-Line 2\n+New Line 2\n@@ -3,2 +3,2 @@\n Line 3\n-Line 4\n+New Line 4\n",
+			expected: "Line 1\nNew Line 2\nLine 3\nNew Line 4\n",
+		},
+		{
+			name:     "add_at_end",
+			original: "Line 1\nLine 2\n",
+			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -1,2 +1,3 @@\n Line 1\n Line 2\n+Line 3\n",
+			expected: "Line 1\nLine 2\nLine 3\n",
+		},
+		{
+			name:     "add_at_beginning",
+			original: "Line 2\nLine 3\n",
+			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -0,0 +1 @@\n+Line 1\n@@ -1,2 +2,2 @@\n Line 2\n Line 3\n",
+			expected: "Line 1\nLine 2\nLine 3\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := applyPatch([]byte(tt.original), []byte(tt.patch))
+			if tt.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, string(result))
+		})
+	}
 }

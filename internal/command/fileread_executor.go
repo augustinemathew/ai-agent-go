@@ -1,10 +1,10 @@
 package command
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"time"
 )
@@ -98,6 +98,20 @@ func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 			// Continue if context is not done
 		}
 
+		// Validate line numbers
+		if fileReadCmd.StartLine < 0 {
+			finalErr = fmt.Errorf("invalid start line: %d (must be >= 0)", fileReadCmd.StartLine)
+			return
+		}
+		if fileReadCmd.EndLine < 0 {
+			finalErr = fmt.Errorf("invalid end line: %d (must be >= 0)", fileReadCmd.EndLine)
+			return
+		}
+		if fileReadCmd.StartLine > 0 && fileReadCmd.EndLine > 0 && fileReadCmd.StartLine > fileReadCmd.EndLine {
+			finalErr = fmt.Errorf("invalid line range: start line %d is after end line %d", fileReadCmd.StartLine, fileReadCmd.EndLine)
+			return
+		}
+
 		// Open the file
 		fmt.Printf("[%s] Opening file: %s\n", cmdID, fileReadCmd.FilePath)
 		file, err := os.Open(fileReadCmd.FilePath)
@@ -109,58 +123,62 @@ func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 		defer file.Close()
 		fmt.Printf("[%s] File opened successfully.\n", cmdID)
 
-		// Read in chunks
-		buffer := make([]byte, fileReadChunkSize)
-		readLoopCounter := 0
+		// Create a scanner to read line by line
+		scanner := bufio.NewScanner(file)
+		currentLine := 1 // Start from line 1 (1-based indexing)
+
+		// Read lines until we reach the start line
+		for currentLine < fileReadCmd.StartLine && scanner.Scan() {
+			currentLine++
+		}
+
+		// Check if we reached EOF before start line
+		if currentLine < fileReadCmd.StartLine {
+			finalErr = fmt.Errorf("file has fewer lines than start line %d", fileReadCmd.StartLine)
+			return
+		}
+
+		// Now read the requested lines
 		for {
-			readLoopCounter++
-			fmt.Printf("[%s] Read loop iteration %d: Checking context...\n", cmdID, readLoopCounter)
-			// Check for cancellation before each read
+			// Check for cancellation before each line
 			select {
 			case <-ctx.Done():
-				finalErr = ctx.Err() // Record error for deferred final message
-				fmt.Printf("[%s] Read loop iteration %d: Context check DONE. finalErr set to: %v\n", cmdID, readLoopCounter, finalErr)
+				finalErr = ctx.Err()
 				return
 			default:
-				fmt.Printf("[%s] Read loop iteration %d: Context check OK.\n", cmdID, readLoopCounter)
 			}
 
-			fmt.Printf("[%s] Read loop iteration %d: Attempting file.Read()...\n", cmdID, readLoopCounter)
-			n, err := file.Read(buffer)
-			fmt.Printf("[%s] Read loop iteration %d: file.Read() returned n=%d, err=%v\n", cmdID, readLoopCounter, n, err)
-
-			if n > 0 {
-				fmt.Printf("[%s] Read loop iteration %d: Read %d bytes. Checking context before send...\n", cmdID, readLoopCounter, n)
-				// Send the chunk read
-				// Need to check context again before sending on channel
-				select {
-				case <-ctx.Done():
-					finalErr = ctx.Err()
-					fmt.Printf("[%s] Read loop iteration %d: Context check DONE while preparing send. finalErr set to: %v\n", cmdID, readLoopCounter, finalErr)
-					return
-				case results <- OutputResult{
-					CommandID:   fileReadCmd.CommandID,
-					CommandType: CmdFileRead,
-					Status:      StatusRunning,
-					ResultData:  string(buffer[:n]),
-				}:
-					fmt.Printf("[%s] Read loop iteration %d: Sent %d bytes chunk.\n", cmdID, readLoopCounter, n)
-				}
+			if !scanner.Scan() {
+				break // EOF reached
 			}
 
-			if err == io.EOF {
-				fmt.Printf("[%s] Read loop iteration %d: EOF reached.\n", cmdID, readLoopCounter)
-				// Successfully reached end of file
-				break // Exit loop cleanly, finalErr remains nil
+			line := scanner.Text() + "\n" // Add newline back since scanner strips it
+
+			// Check if we've reached the end line
+			if fileReadCmd.EndLine > 0 && currentLine > fileReadCmd.EndLine {
+				break
 			}
-			if err != nil {
-				// Handle other read errors
-				finalErr = fmt.Errorf("error reading file '%s': %w", fileReadCmd.FilePath, err)
-				fmt.Printf("[%s] Read loop iteration %d: Read error. finalErr set to: %v\n", cmdID, readLoopCounter, finalErr)
-				return // Exit loop, finalErr is set
+
+			// Send the line
+			select {
+			case <-ctx.Done():
+				finalErr = ctx.Err()
+				return
+			case results <- OutputResult{
+				CommandID:   fileReadCmd.CommandID,
+				CommandType: CmdFileRead,
+				Status:      StatusRunning,
+				ResultData:  line,
+			}:
 			}
+
+			currentLine++
 		}
-		fmt.Printf("[%s] Exited read loop normally.\n", cmdID)
+
+		if err := scanner.Err(); err != nil {
+			finalErr = fmt.Errorf("error scanning file '%s': %w", fileReadCmd.FilePath, err)
+			return
+		}
 	}()
 
 	return results, nil

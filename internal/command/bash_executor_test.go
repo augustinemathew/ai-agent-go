@@ -353,3 +353,54 @@ func TestBashExecExecutor_Execute_InvalidCommandType(t *testing.T) {
 	assert.Nil(t, resultsChan, "Expected nil channel on immediate error")
 	assert.Contains(t, err.Error(), "invalid command type: expected BashExecCommand, got command.FileReadCommand")
 }
+
+func TestBashExecExecutor_CreateErrorResult(t *testing.T) {
+	executor := NewBashExecExecutor()
+	cmd := BashExecCommand{
+		BaseCommand: BaseCommand{
+			CommandID:   "test-error",
+			Description: "Test error result",
+		},
+		Command: "echo 'test'",
+	}
+
+	tests := []struct {
+		name          string
+		err           error
+		expectedError string
+	}{
+		{
+			name:          "basic error",
+			err:           fmt.Errorf("command failed"),
+			expectedError: "command failed",
+		},
+		{
+			name:          "empty error",
+			err:           nil,
+			expectedError: "",
+		},
+		{
+			name:          "context cancelled",
+			err:           context.Canceled,
+			expectedError: context.Canceled.Error(),
+		},
+		{
+			name:          "context timeout",
+			err:           context.DeadlineExceeded,
+			expectedError: context.DeadlineExceeded.Error(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := executor.CreateErrorResult(cmd, tt.err)
+
+			assert.Equal(t, cmd.CommandID, result.CommandID)
+			assert.Equal(t, CmdBashExec, result.CommandType)
+			assert.Equal(t, StatusFailed, result.Status)
+			assert.Contains(t, result.Message, "Command execution failed")
+			assert.Equal(t, tt.expectedError, result.Error)
+			assert.Empty(t, result.ResultData)
+		})
+	}
+}

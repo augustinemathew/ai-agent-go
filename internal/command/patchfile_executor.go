@@ -33,108 +33,163 @@ var (
 func applyPatch(originalContent []byte, patchContent []byte) ([]byte, error) {
 	// Handle empty patch edge case upfront
 	if len(bytes.TrimSpace(patchContent)) == 0 {
+		log.Printf("DEBUG: Empty patch detected, returning original content")
 		return originalContent, nil // Applying empty patch is a no-op
 	}
 
+	log.Printf("DEBUG: Parsing patch content:\n%s", string(patchContent))
 	fileDiffs, err := diff.ParseMultiFileDiff(patchContent)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errParseFailed, err)
+		log.Printf("DEBUG: Failed to parse patch: %v", err)
+		return nil, fmt.Errorf("failed to parse patch: %v", err)
 	}
 
 	if len(fileDiffs) == 0 {
-		return nil, errNoFilePatch
+		log.Printf("DEBUG: No valid hunks found in patch")
+		return nil, fmt.Errorf("failed to parse patch: no valid hunks found")
 	}
 
 	if len(fileDiffs) > 1 {
-		return nil, errMultiFilePatch
+		log.Printf("DEBUG: Multiple file diffs found: %d", len(fileDiffs))
+		return nil, fmt.Errorf("patch contains multiple file diffs, only single file patches are supported")
 	}
 
 	fileDiff := fileDiffs[0]
-	originalLines := splitLines(originalContent)
-	// Estimate capacity: original lines + net added lines (approximated)
-	addedLinesEstimate := 0
-	for _, h := range fileDiff.Hunks {
-		addedLinesEstimate += int(h.NewLines) - int(h.OrigLines)
+	log.Printf("DEBUG: Processing file diff - OrigName: %s, NewName: %s", fileDiff.OrigName, fileDiff.NewName)
+
+	// Special handling for /dev/null source in creation patches
+	if fileDiff.OrigName == "/dev/null" {
+		log.Printf("DEBUG: Handling file creation patch")
+		var result [][]byte
+		for _, hunk := range fileDiff.Hunks {
+			log.Printf("DEBUG: Processing creation hunk: %d lines", len(hunk.Body))
+			hunkLines := bytes.Split(hunk.Body, []byte("\n"))
+			for _, line := range hunkLines {
+				if len(line) > 0 && line[0] == '+' {
+					log.Printf("DEBUG: Adding new line: '%s'", string(line[1:]))
+					result = append(result, line[1:])
+				}
+			}
+		}
+		// Join with newlines and add final newline
+		if len(result) > 0 {
+			log.Printf("DEBUG: Creating new file with %d lines", len(result))
+			return append(bytes.Join(result, []byte("\n")), '\n'), nil
+		}
+		log.Printf("DEBUG: Creating empty file")
+		return []byte{}, nil
 	}
-	patchedLines := make([]string, 0, len(originalLines)+addedLinesEstimate)
 
-	originalLineIdx := 0 // 0-based index for originalLines
+	// Handle deletion of entire file
+	if fileDiff.NewName == "/dev/null" {
+		log.Printf("DEBUG: Handling file deletion")
+		return []byte{}, nil
+	}
 
-	for _, hunk := range fileDiff.Hunks {
-		// Hunk line numbers are 1-based, but parser might return 0 for new files.
-		hunkStartLine := int(hunk.OrigStartLine) // 1-based start line in original
+	log.Printf("DEBUG: Original content (%d bytes):\n%s", len(originalContent), string(originalContent))
+	originalLines := bytes.Split(originalContent, []byte("\n"))
+	if len(originalContent) > 0 && !bytes.HasSuffix(originalContent, []byte("\n")) {
+		log.Printf("DEBUG: Original content doesn't end with newline, appending empty line")
+		originalLines = append(originalLines, []byte{})
+	}
 
-		// Handle @@ -0,0 @@ case for new files: Treat start line as 1 for indexing.
-		if hunkStartLine == 0 && hunk.OrigLines == 0 {
-			hunkStartLine = 1
+	// Track if we should preserve trailing newline
+	preserveTrailingNewline := len(originalContent) > 0 && bytes.HasSuffix(originalContent, []byte("\n"))
+	log.Printf("DEBUG: Preserve trailing newline: %v", preserveTrailingNewline)
+
+	// Apply each hunk
+	var result [][]byte
+	currentLine := 0
+
+	for hunkIdx, hunk := range fileDiff.Hunks {
+		log.Printf("DEBUG: Processing hunk %d: @@ -%d,%d +%d,%d @@",
+			hunkIdx, hunk.OrigStartLine, hunk.OrigLines, hunk.NewStartLine, hunk.NewLines)
+
+		// Add lines before the hunk
+		for ; currentLine < int(hunk.OrigStartLine-1); currentLine++ {
+			if currentLine < len(originalLines) {
+				log.Printf("DEBUG: Copying pre-hunk line %d: '%s'", currentLine+1, string(originalLines[currentLine]))
+				result = append(result, originalLines[currentLine])
+			}
 		}
 
-		if hunkStartLine > len(originalLines)+1 {
-			return nil, fmt.Errorf("%w: hunk %d starts at line %d, original only has %d lines", errLineOutOfBounds, hunk.OrigStartLine, hunkStartLine, len(originalLines))
-		}
+		// Process the hunk
+		origIdx := 0
+		addIdx := 0
+		hunkLines := bytes.Split(hunk.Body, []byte("\n"))
+		for lineIdx, line := range hunkLines {
+			if len(line) == 0 && lineIdx == len(hunkLines)-1 {
+				// Skip empty line at end of hunk
+				continue
+			}
 
-		// 1. Copy lines from original untouched before the hunk
-		linesToCopy := hunkStartLine - 1 - originalLineIdx
-		if linesToCopy < 0 {
-			return nil, fmt.Errorf("invalid hunk state: original index %d, hunk starts at %d", originalLineIdx, hunkStartLine)
-		}
-		if linesToCopy > 0 {
-			patchedLines = append(patchedLines, originalLines[originalLineIdx:originalLineIdx+linesToCopy]...)
-			originalLineIdx += linesToCopy
-		}
-
-		// 2. Process the hunk body
-		hunkBodyLines := splitLines(hunk.Body)
-		expectedOriginalLineCountInHunk := 0 // Count context and delete lines
-
-		for _, line := range hunkBodyLines {
+			log.Printf("DEBUG: Processing hunk line %d: '%s'", lineIdx+1, string(line))
 			if len(line) == 0 {
+				// Empty line in middle of hunk
+				result = append(result, []byte{})
 				continue
 			}
 
 			switch line[0] {
-			case ' ': // Context line
-				if originalLineIdx >= len(originalLines) {
-					return nil, fmt.Errorf("%w: context line refers to line %d, but original only has %d lines", errHunkMismatch, originalLineIdx+1, len(originalLines))
+			case ' ':
+				// Context line - verify it matches
+				if currentLine >= len(originalLines) {
+					log.Printf("DEBUG: Context line error: EOF at line %d", currentLine+1)
+					return nil, fmt.Errorf("context mismatch: expected '%s', got end of file at line %d", string(line[1:]), currentLine+1)
 				}
-				if line[1:] != originalLines[originalLineIdx] {
-					return nil, fmt.Errorf("%w: expected '%s', got '%s' at original line %d", errHunkMismatch, line[1:], originalLines[originalLineIdx], originalLineIdx+1)
+				originalLine := bytes.TrimRight(originalLines[currentLine], "\n\r")
+				patchLine := bytes.TrimRight(line[1:], "\n\r")
+				log.Printf("DEBUG: Comparing context - Original: '%s', Patch: '%s'", string(originalLine), string(patchLine))
+				if !bytes.Equal(originalLine, patchLine) {
+					log.Printf("DEBUG: Context mismatch at line %d", currentLine+1)
+					return nil, fmt.Errorf("context mismatch: expected '%s', got '%s' at original line %d", string(patchLine), string(originalLine), currentLine+1)
 				}
-				patchedLines = append(patchedLines, originalLines[originalLineIdx])
-				originalLineIdx++
-				expectedOriginalLineCountInHunk++
-			case '-': // Deletion line
-				if originalLineIdx >= len(originalLines) {
-					return nil, fmt.Errorf("%w: deletion line refers to line %d, but original only has %d lines", errHunkMismatch, originalLineIdx+1, len(originalLines))
+				result = append(result, originalLines[currentLine])
+				currentLine++
+				origIdx++
+				addIdx++
+			case '-':
+				// Deletion - verify it matches
+				if currentLine >= len(originalLines) {
+					log.Printf("DEBUG: Deletion line error: EOF at line %d", currentLine+1)
+					return nil, fmt.Errorf("context mismatch: expected removal of '%s', got end of file at line %d", string(line[1:]), currentLine+1)
 				}
-				if line[1:] != originalLines[originalLineIdx] {
-					return nil, fmt.Errorf("%w: expected removal of '%s', got '%s' at original line %d", errHunkMismatch, line[1:], originalLines[originalLineIdx], originalLineIdx+1)
+				originalLine := bytes.TrimRight(originalLines[currentLine], "\n\r")
+				patchLine := bytes.TrimRight(line[1:], "\n\r")
+				log.Printf("DEBUG: Comparing deletion - Original: '%s', Patch: '%s'", string(originalLine), string(patchLine))
+				if !bytes.Equal(originalLine, patchLine) {
+					log.Printf("DEBUG: Deletion mismatch at line %d", currentLine+1)
+					return nil, fmt.Errorf("context mismatch: expected removal of '%s', got '%s' at original line %d", string(patchLine), string(originalLine), currentLine+1)
 				}
-				originalLineIdx++
-				expectedOriginalLineCountInHunk++
-			case '+': // Addition line
-				patchedLines = append(patchedLines, line[1:])
-			case '\\': // "\ No newline at end of file" marker - Ignore
-				continue
-			default:
-				return nil, fmt.Errorf("invalid line prefix in hunk body: %q", line)
+				currentLine++
+				origIdx++
+			case '+':
+				// Addition
+				log.Printf("DEBUG: Adding new line: '%s'", string(line[1:]))
+				result = append(result, line[1:])
+				addIdx++
 			}
 		}
-
-		// 3. Sanity check hunk metadata vs processed lines (optional but good practice)
-		expectedEndIdx := hunkStartLine - 1 + expectedOriginalLineCountInHunk
-		if originalLineIdx != expectedEndIdx {
-			return nil, fmt.Errorf("internal error: index mismatch after processing hunk. Expected %d, got %d", expectedEndIdx, originalLineIdx)
-		}
 	}
 
-	// 4. Copy remaining lines from original
-	if originalLineIdx < len(originalLines) {
-		patchedLines = append(patchedLines, originalLines[originalLineIdx:]...)
+	// Add remaining lines after last hunk
+	for ; currentLine < len(originalLines)-1 || (currentLine == len(originalLines)-1 && len(originalLines[currentLine]) > 0); currentLine++ {
+		log.Printf("DEBUG: Copying post-hunk line %d: '%s'", currentLine+1, string(originalLines[currentLine]))
+		result = append(result, originalLines[currentLine])
 	}
 
-	// 5. Join lines back using newline
-	return []byte(strings.Join(patchedLines, "\n")), nil
+	// Join lines with newlines
+	if len(result) == 0 {
+		return []byte{}, nil
+	}
+
+	output := bytes.Join(result, []byte("\n"))
+	if preserveTrailingNewline || (len(fileDiff.Hunks) > 0 && bytes.HasSuffix(fileDiff.Hunks[len(fileDiff.Hunks)-1].Body, []byte("\n"))) {
+		output = append(output, '\n')
+	}
+
+	log.Printf("DEBUG: Final output (%d bytes):\n%s", len(output), string(output))
+	return output, nil
 }
 
 // splitLines splits byte content into lines, handling both \n and \r\n endings.

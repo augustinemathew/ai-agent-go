@@ -78,7 +78,7 @@ func createLargeTempFile(t *testing.T, approxSize int) (string, string) {
 
 func TestFileReadExecutor_Execute_Success(t *testing.T) {
 	executor := NewFileReadExecutor()
-	expectedContent := "This is a test file.\nWith multiple lines."
+	expectedContent := "This is a test file.\nWith multiple lines.\n"
 	tempFilePath := createTempFile(t, expectedContent)
 
 	cmd := FileReadCommand{
@@ -320,4 +320,120 @@ func TestFileReadExecutor_Execute_InvalidCommandType(t *testing.T) {
 	require.Error(t, err, "Expected an error for invalid command type")
 	assert.Nil(t, resultsChan, "Expected nil channel on immediate error")
 	assert.Contains(t, err.Error(), "invalid command type: expected FileReadCommand, got command.BashExecCommand")
+}
+
+func TestFileReadExecutor_LineBasedReading(t *testing.T) {
+	executor := NewFileReadExecutor()
+	content := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\n"
+	tempFilePath := createTempFile(t, content)
+
+	tests := []struct {
+		name        string
+		startLine   int
+		endLine     int
+		expected    string
+		expectError bool
+	}{
+		{
+			name:      "read_from_line_2",
+			startLine: 2,
+			endLine:   0,
+			expected:  "Line 2\nLine 3\nLine 4\nLine 5\n",
+		},
+		{
+			name:      "read_lines_2-4",
+			startLine: 2,
+			endLine:   4,
+			expected:  "Line 2\nLine 3\nLine 4\n",
+		},
+		{
+			name:      "read_single_line",
+			startLine: 3,
+			endLine:   3,
+			expected:  "Line 3\n",
+		},
+		{
+			name:        "invalid_start_line",
+			startLine:   -1,
+			endLine:     0,
+			expectError: true,
+		},
+		{
+			name:        "invalid_end_line",
+			startLine:   1,
+			endLine:     -1,
+			expectError: true,
+		},
+		{
+			name:        "start_after_end",
+			startLine:   3,
+			endLine:     2,
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := FileReadCommand{
+				BaseCommand: BaseCommand{CommandID: "test-read-lines-" + tt.name},
+				FilePath:    tempFilePath,
+				StartLine:   tt.startLine,
+				EndLine:     tt.endLine,
+			}
+
+			resultsChan, err := executor.Execute(context.Background(), cmd)
+			require.NoError(t, err, "Execute setup failed")
+
+			finalResult, combinedOutput, received := collectStreamingResults_FileRead(t, resultsChan, 5*time.Second)
+			require.True(t, received, "Did not receive final result")
+
+			if tt.expectError {
+				assert.Equal(t, StatusFailed, finalResult.Status)
+				assert.NotEmpty(t, finalResult.Error)
+			} else {
+				assert.Equal(t, StatusSucceeded, finalResult.Status)
+				assert.Empty(t, finalResult.Error)
+				assert.Equal(t, tt.expected, combinedOutput)
+			}
+		})
+	}
+}
+
+func TestFileReadExecutor_ContextCancellation_FinalStatus(t *testing.T) {
+	// Create a large test file to ensure reading takes some time
+	fileSize := 50 * 1024 // 50KB
+	tempFilePath, _ := createLargeTempFile(t, fileSize)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	executor := NewFileReadExecutor()
+	cmd := FileReadCommand{
+		BaseCommand: BaseCommand{CommandID: "test-cancel-final-status"},
+		FilePath:    tempFilePath,
+	}
+
+	resultsChan, err := executor.Execute(ctx, cmd)
+	require.NoError(t, err, "Execute setup failed")
+
+	// Let some initial results come through, then cancel
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	// Collect all results until channel is closed
+	var results []OutputResult
+	for result := range resultsChan {
+		results = append(results, result)
+	}
+
+	// Verify we received at least one result
+	require.NotEmpty(t, results, "Expected at least one result")
+
+	// Get the final result
+	finalResult := results[len(results)-1]
+
+	// Verify the final result has the correct status and message
+	assert.Equal(t, StatusFailed, finalResult.Status, "Final status should be Failed")
+	assert.Contains(t, finalResult.Error, context.Canceled.Error(), "Error should indicate context cancellation")
+	assert.Contains(t, finalResult.Message, "File reading cancelled", "Message should indicate cancellation")
+	assert.Equal(t, cmd.CommandID, finalResult.CommandID, "CommandID should match")
+	assert.Equal(t, CmdFileRead, finalResult.CommandType, "CommandType should be FILE_READ")
 }

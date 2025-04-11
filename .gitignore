@@ -26,3 +26,4 @@ commandrunner
 .idea/
 *.swp
 *~ 
+coverage.html

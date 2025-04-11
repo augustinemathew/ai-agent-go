@@ -212,3 +212,18 @@ func createErrorResult(cmd BashExecCommand, errMsg string) OutputResult {
 		Error:       errMsg,
 	}
 }
+
+// CreateErrorResult creates an error result for a failed command execution
+func (e *BashExecExecutor) CreateErrorResult(cmd BashExecCommand, err error) OutputResult {
+	var errMsg string
+	if err != nil {
+		errMsg = err.Error()
+	}
+	return OutputResult{
+		CommandID:   cmd.CommandID,
+		CommandType: CmdBashExec,
+		Status:      StatusFailed,
+		Message:     fmt.Sprintf("Command execution failed: %v", err),
+		Error:       errMsg,
+	}
+}
