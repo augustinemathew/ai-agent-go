@@ -522,6 +522,45 @@ func TestApplyPatch_EdgeCases(t *testing.T) {
 			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -0,0 +1 @@\n+Line 1\n@@ -1,2 +2,2 @@\n Line 2\n Line 3\n",
 			expected: "Line 1\nLine 2\nLine 3\n",
 		},
+		// New test cases to improve coverage
+		{
+			name:     "patch_with_many_remaining_lines",
+			original: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\n",
+			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,4 @@\n Line 1\n Line 2\n+New Line\n Line 3\n",
+			expected: "Line 1\nLine 2\nNew Line\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10\n",
+		},
+		{
+			name:     "patch_with_no_trailing_newline",
+			original: "Line 1\nLine 2\nLine 3", // Note: no trailing newline
+			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,4 @@\n Line 1\n Line 2\n+New Line\n Line 3",
+			expected: "Line 1\nLine 2\nNew Line\nLine 3\n", // Our implementation adds a trailing newline
+		},
+		{
+			name:     "patch_adds_trailing_newline",
+			original: "Line 1\nLine 2\nLine 3", // Note: no trailing newline
+			patch:    "--- a/test.txt\n+++ b/test.txt\n@@ -1,3 +1,4 @@\n Line 1\n Line 2\n Line 3\n+Line 4\n",
+			expected: "Line 1\nLine 2\nLine 3\nLine 4\n",
+		},
+		{
+			name:     "patch_preserves_empty_file",
+			original: "",
+			patch:    "--- /dev/null\n+++ b/test.txt\n",
+			expected: "",
+		},
+		{
+			name:          "context_line_eof_error",
+			original:      "Line 1\n",
+			patch:         "--- a/test.txt\n+++ b/test.txt\n@@ -1,2 +1,2 @@\n Line 1\n Line 2\n",
+			expectError:   true,
+			errorContains: "context mismatch: expected 'Line 2', got '' at original line 2",
+		},
+		{
+			name:          "deletion_line_eof_error",
+			original:      "Line 1\n",
+			patch:         "--- a/test.txt\n+++ b/test.txt\n@@ -1,2 +1,1 @@\n Line 1\n-Line 2\n",
+			expectError:   true,
+			errorContains: "context mismatch: expected removal of 'Line 2', got '' at original line 2",
+		},
 	}
 
 	for _, tt := range tests {
@@ -534,6 +573,133 @@ func TestApplyPatch_EdgeCases(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, string(result))
+		})
+	}
+}
+
+// Test specifically for addRemainingLines function to improve coverage
+func TestAddRemainingLines(t *testing.T) {
+	testCases := []struct {
+		name          string
+		originalLines [][]byte
+		currentLine   int
+		expected      [][]byte
+	}{
+		{
+			name:          "add_multiple_remaining_lines",
+			originalLines: [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("Line 3"), []byte("Line 4")},
+			currentLine:   1,
+			expected:      [][]byte{[]byte("Line 2"), []byte("Line 3"), []byte("Line 4")},
+		},
+		{
+			name:          "add_single_remaining_line",
+			originalLines: [][]byte{[]byte("Line 1"), []byte("Line 2")},
+			currentLine:   1,
+			expected:      [][]byte{[]byte("Line 2")},
+		},
+		{
+			name:          "add_no_remaining_lines",
+			originalLines: [][]byte{[]byte("Line 1"), []byte("Line 2")},
+			currentLine:   2,
+			expected:      nil, // The function results in an empty slice, which is nil
+		},
+		{
+			name:          "add_empty_last_line",
+			originalLines: [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("")},
+			currentLine:   2,
+			expected:      nil, // The function results in an empty slice, which is nil
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var result [][]byte
+			addRemainingLines(&result, tc.originalLines, tc.currentLine)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+// Test specifically for verifyContextLine and verifyDeletionLine functions
+func TestLineVerification(t *testing.T) {
+	testCases := []struct {
+		name           string
+		functionToTest string // "context" or "deletion"
+		line           []byte
+		originalLines  [][]byte
+		currentLine    int
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name:           "matching_context_line",
+			functionToTest: "context",
+			line:           []byte(" Line 2"),
+			originalLines:  [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("Line 3")},
+			currentLine:    1,
+			expectError:    false,
+		},
+		{
+			name:           "mismatched_context_line",
+			functionToTest: "context",
+			line:           []byte(" Wrong Line"),
+			originalLines:  [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("Line 3")},
+			currentLine:    1,
+			expectError:    true,
+			errorContains:  "context mismatch: expected 'Wrong Line', got 'Line 2'",
+		},
+		{
+			name:           "context_line_at_eof",
+			functionToTest: "context",
+			line:           []byte(" Line 4"),
+			originalLines:  [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("Line 3")},
+			currentLine:    3,
+			expectError:    true,
+			errorContains:  "context mismatch: expected 'Line 4', got end of file",
+		},
+		{
+			name:           "matching_deletion_line",
+			functionToTest: "deletion",
+			line:           []byte("-Line 2"),
+			originalLines:  [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("Line 3")},
+			currentLine:    1,
+			expectError:    false,
+		},
+		{
+			name:           "mismatched_deletion_line",
+			functionToTest: "deletion",
+			line:           []byte("-Wrong Line"),
+			originalLines:  [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("Line 3")},
+			currentLine:    1,
+			expectError:    true,
+			errorContains:  "context mismatch: expected removal of 'Wrong Line', got 'Line 2'",
+		},
+		{
+			name:           "deletion_line_at_eof",
+			functionToTest: "deletion",
+			line:           []byte("-Line 4"),
+			originalLines:  [][]byte{[]byte("Line 1"), []byte("Line 2"), []byte("Line 3")},
+			currentLine:    3,
+			expectError:    true,
+			errorContains:  "context mismatch: expected removal of 'Line 4', got end of file",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var err error
+			if tc.functionToTest == "context" {
+				err = verifyContextLine(tc.line, tc.originalLines, tc.currentLine)
+			} else {
+				err = verifyDeletionLine(tc.line, tc.originalLines, tc.currentLine)
+			}
+
+			if tc.expectError {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.errorContains)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
