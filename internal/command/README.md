@@ -53,16 +53,17 @@ Executes a shell command (`BashExecCommand`).
 
 **Output JSON (Success Example):**
 
-The command streams combined `stdout` and `stderr` in the `resultData` field of intermediate `RUNNING` status messages. The final `SUCCEEDED` message typically has empty `resultData`.
+This example shows the *final combined* `OutputResult` after using `CombineOutputResults`.
+The intermediate `RUNNING` messages' `resultData` (stdout/stderr) is concatenated here.
 
 ```json
 {
-  "command_id": "test-success-stream-1",
+  "command_id": "happy-bash-1",
   "commandType": "BASH_EXEC",
   "status": "SUCCEEDED",
-  "message": "Command finished in 15.23ms. Final CWD: /Users/augustine/ai-agent-backend/ai-agent-v3.",
+  "message": "Command finished in 5ms. Final CWD: /Users/augustine/ai-agent-backend/ai-agent-v3.",
   "error": "",
-  "resultData": "" // Empty in the final success message
+  "resultData": "Hello from Bash!\nStarting main script execution...\nInitial directory: /Users/augustine/ai-agent-backend/ai-agent-v3\n---\n\n############################################\n# Script Exiting\n# Exit Status: 0\n# Final Working Directory: /Users/augustine/ai-agent-backend/ai-agent-v3\n############################################\n"
 }
 ```
 
@@ -82,18 +83,34 @@ Reads the content of a file (`FileReadCommand`).
 }
 ```
 
-**Output JSON (Success Example):**
+**Output JSON (Success Example - Initial Read):**
 
-The command streams chunks of the file content in the `resultData` field of intermediate `RUNNING` status messages. The final `SUCCEEDED` message has empty `resultData`.
+This example shows the *final combined* `OutputResult` after using `CombineOutputResults`.
+The intermediate `RUNNING` messages' `resultData` (file content chunks) is concatenated here.
 
 ```json
 {
-  "command_id": "test-read-success-1",
+  "command_id": "happy-read-1",
   "commandType": "FILE_READ",
   "status": "SUCCEEDED",
-  "message": "File reading finished successfully in 1.2ms for file /tmp/testfile_123.txt",
+  "message": "File reading finished successfully in 0s.",
   "error": "",
-  "resultData": "" // Empty in the final success message
+  "resultData": "Hello from FileWrite!\nThis is a test file."
+}
+```
+
+**Output JSON (Success Example - After Patch):**
+
+This shows the result of reading the same file after it was patched.
+
+```json
+{
+  "command_id": "happy-read-2",
+  "commandType": "FILE_READ",
+  "status": "SUCCEEDED",
+  "message": "File reading finished successfully in 0s.",
+  "error": "",
+  "resultData": "Greetings from PatchFile!\nThis is a test file."
 }
 ```
 
@@ -110,7 +127,7 @@ Writes content to a file, overwriting if it exists (`FileWriteCommand`).
   "command_id": "unique-id-3",
   "description": "Write initial data",
   "file_path": "/path/to/output.txt", // Path to the file to write
-  "content": "This is the content to write.\\nSecond line." // Content to write
+  "content": "This is the content to write.\nSecond line."
 }
 ```
 
@@ -120,10 +137,10 @@ Writes content to a file, overwriting if it exists (`FileWriteCommand`).
 
 ```json
 {
-  "command_id": "test-write-success-1",
+  "command_id": "happy-write-1",
   "commandType": "FILE_WRITE",
   "status": "SUCCEEDED",
-  "message": "File writing finished successfully for /tmp/test_write_success.txt",
+  "message": "File writing finished successfully to '/var/folders/99/0xjhznh90fldmj20kkw_s_km0000gn/T/cmd_runner_demo_1744357299302616000.txt' in 0s.",
   "error": "",
   "resultData": ""
 }
@@ -169,7 +186,7 @@ Applies a patch (e.g., in unified diff format) to a file (`PatchFileCommand`).
   "command_id": "happy-patch-1",
   "commandType": "PATCH_FILE",
   "status": "SUCCEEDED",
-  "message": "Successfully applied patch to /tmp/cmd_runner_demo_1678886400.txt in 12ms.",
+  "message": "Successfully applied patch to /var/folders/99/0xjhznh90fldmj20kkw_s_km0000gn/T/cmd_runner_demo_1744357299302616000.txt in 0s.",
   "error": "",
   "resultData": ""
 }
@@ -197,15 +214,15 @@ Contains a formatted string listing the directory contents in `resultData`. `sta
 
 ```json
 {
-  "command_id": "test-list-success-1",
+  "command_id": "happy-list-1",
   "commandType": "LIST_DIRECTORY",
   "status": "SUCCEEDED",
-  "message": "Successfully listed directory /tmp/TestListDirectoryExecutor_Execute_Success12345",
+  "message": "Successfully listed directory '/var/folders/99/0xjhznh90fldmj20kkw_s_km0000gn/T/' in 2ms.",
   "error": "",
-  "resultData": "Listing for /private/tmp/TestListDirectoryExecutor_Execute_Success12345:\\nType     Mode        Modified             Size       Name\\n[DIR  ]   drwxr-xr-x  2024-01-15 10:30:00  128        subdir1\\n[FILE]   -rw-r--r--  2024-01-15 10:30:00  5          testfile.txt\\n"
+  "resultData": "Listing for /var/folders/99/0xjhznh90fldmj20kkw_s_km0000gn/T:\n  [DIR ] ... (many lines omitted for brevity) ...\n  [FILE] -rw-r--r-- 2025-04-11T00:41:39-07:00         46 cmd_runner_demo_1744357299302616000.txt\n  ... (many lines omitted for brevity) ...\n"
 }
 ```
-*(Note: The exact format of `resultData` might vary slightly based on the OS, but the structure `[TYPE] Mode Modified Size Name` is consistent)*
+*(Note: The exact format of `resultData` might vary slightly based on the OS, but the structure `[TYPE] Mode Modified Size Name` is consistent. Output is truncated for brevity.)*
 
 ---
 
@@ -254,7 +271,7 @@ The format depends on how user input is handled. `resultData` might contain the 
 
 ## Usage
 
-1.  **Initialization**: Create a `CommandRegistry` and register executors for each command type:
+1.  **Initialization**: Create a `CommandRegistry`. All standard executors are registered automatically by `NewMapRegistry`.
     ```go
     package main
 
@@ -268,15 +285,11 @@ The format depends on how user input is handled. `resultData` might contain the 
     )
 
     func main() {
+    	// Create registry - standard executors are registered automatically.
     	registry := command.NewMapRegistry()
 
-    	// Register executors for supported command types
-    	registry.Register(command.CmdBashExec, command.NewBashExecutor())
-    	registry.Register(command.CmdFileRead, command.NewFileReadExecutor(1024)) // Example buffer size
-    	registry.Register(command.CmdFileWrite, command.NewFileWriteExecutor())
-    	registry.Register(command.CmdListDirectory, command.NewListDirectoryExecutor())
-    	registry.Register(command.CmdPatchFile, command.NewPatchFileExecutor())             // Assuming implementation exists
-    	registry.Register(command.CmdRequestUserInput, command.NewUserInputExecutor()) // Assuming implementation exists
+    	// Optional: Override or register custom executors if needed
+    	// registry.Register(command.CmdBashExec, myCustomBashExecutor)
 
     	// ... rest of your application setup
     }

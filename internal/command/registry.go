@@ -21,15 +21,29 @@ type MapRegistry struct {
 	executors map[CommandType]CommandExecutor
 }
 
-// NewMapRegistry creates and returns a new, initialized MapRegistry.
+// NewMapRegistry creates and returns a new MapRegistry, automatically registering
+// all known standard command executors.
 func NewMapRegistry() *MapRegistry {
-	return &MapRegistry{
+	r := &MapRegistry{
 		executors: make(map[CommandType]CommandExecutor),
 	}
+
+	// Register all known executors automatically
+	r.Register(CmdBashExec, NewBashExecExecutor())
+	r.Register(CmdFileRead, NewFileReadExecutor()) // Consider if buffer size needs configuration
+	r.Register(CmdFileWrite, NewFileWriteExecutor())
+	r.Register(CmdPatchFile, NewPatchFileExecutor())
+	r.Register(CmdListDirectory, NewListDirectoryExecutor())
+	r.Register(CmdRequestUserInput, NewRequestUserInputExecutor())
+
+	// Add future executors here...
+
+	return r
 }
 
 // Register associates a CommandExecutor with a specific CommandType.
 // If an executor is already registered for the given type, it will be overwritten.
+// This is kept public in case users want to override or add custom executors.
 func (r *MapRegistry) Register(cmdType CommandType, executor CommandExecutor) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
