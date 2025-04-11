@@ -1,3 +1,6 @@
+// Package command provides implementations for executing various types of commands
+// in the AI agent backend. These commands are executed asynchronously and report
+// their results through channels.
 package command
 
 import (
@@ -13,6 +16,7 @@ import (
 )
 
 // BashExecExecutor handles the execution of BashExecCommand.
+// It implements the CommandExecutor interface for shell command execution.
 type BashExecExecutor struct {
 	// Dependencies can be added here if needed later, e.g., logger.
 }
@@ -22,6 +26,11 @@ func NewBashExecExecutor() *BashExecExecutor {
 	return &BashExecExecutor{}
 }
 
+// bashScriptTemplate is the template used to wrap user commands in a bash script.
+// It sets up error handling and reporting through the EXIT trap.
+// The template expects two format arguments:
+// 1. A command ID to use in the temporary CWD file
+// 2. The actual bash command(s) to execute
 const bashScriptTemplate = `#!/bin/bash
 
 # --- Configuration ---
@@ -58,6 +67,13 @@ echo "---" >&2
 // Execute runs the bash command specified in the BashExecCommand, streaming output.
 // It expects the cmd argument to be of type BashExecCommand.
 // The execution respects cancellation signals from the passed context.Context.
+//
+// The process for executing bash commands is:
+// 1. Set up a timeout context
+// 2. Prepare the command with stdout/stderr pipes
+// 3. Start the command and stream its output
+// 4. Wait for completion and process the final result
+//
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
 	bashCmd, ok := cmd.(BashExecCommand)
@@ -73,136 +89,184 @@ func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 	go func() {
 		defer close(results)
 
-		// --- Setup Context with Timeout ---
-		// Create a context that respects both the parent context (ctx) and the internal 5-minute timeout.
+		// Setup context with timeout
 		const internalTimeout = 5 * time.Minute
 		execCtx, cancel := context.WithTimeout(ctx, internalTimeout)
 		defer cancel() // Ensure resources associated with the timeout context are released
 
-		// --- Construct the full script ---
-		fullScript := fmt.Sprintf(bashScriptTemplate, bashCmd.CommandID, bashCmd.Command)
-
-		// --- Prepare Command for Streaming ---
-		// Use the derived execution context (execCtx) which includes the timeout.
-		execCmd := exec.CommandContext(execCtx, "/bin/bash", "-c", fullScript)
-
-		stdoutPipe, err := execCmd.StdoutPipe()
+		// Setup command with pipes for output
+		execCmd, combinedPipe, err := setupCommand(execCtx, bashCmd)
 		if err != nil {
-			results <- createErrorResult(bashCmd, fmt.Sprintf("Failed to get stdout pipe: %v", err))
-			return
-		}
-		stderrPipe, err := execCmd.StderrPipe()
-		if err != nil {
-			results <- createErrorResult(bashCmd, fmt.Sprintf("Failed to get stderr pipe: %v", err))
+			results <- createErrorResult(bashCmd, err.Error())
 			return
 		}
 
-		// Combine stdout and stderr for reading
-		combinedPipe := io.MultiReader(stdoutPipe, stderrPipe)
-
-		// --- Start Command Execution ---
+		// Start command execution and track time
 		startTime := time.Now()
 		if err := execCmd.Start(); err != nil {
 			results <- createErrorResult(bashCmd, fmt.Sprintf("Failed to start command: %v", err))
 			return
 		}
 
-		// --- Goroutine to Stream Output ---
+		// Stream command output to results channel
 		var readerWg sync.WaitGroup
-		readerWg.Add(1)
-		go func() {
-			defer readerWg.Done()
-			scanner := bufio.NewScanner(combinedPipe)
-			for scanner.Scan() {
-				line := scanner.Text()
-				// Check if the parent context was cancelled before sending the next line
-				select {
-				case <-execCtx.Done():
-					// If context is cancelled (timeout or external), stop sending lines.
-					// The error will be handled in the main goroutine after Wait().
-					return
-				default:
-					// Context still active, send the result
-					results <- OutputResult{
-						CommandID:   bashCmd.CommandID,
-						CommandType: CmdBashExec,
-						Status:      StatusRunning,
-						ResultData:  line + "\n", // Add newline back as scanner strips it
-					}
-				}
-			}
-			scannerErr := scanner.Err()
-			if scannerErr != nil {
-				// Don't send error if context was cancelled, as that's the primary error.
-				if execCtx.Err() == nil {
-					results <- createErrorResult(bashCmd, fmt.Sprintf("Error reading command output: %v", scannerErr))
-				}
-			}
-		}()
+		streamCommandOutput(execCtx, combinedPipe, bashCmd, results, &readerWg)
 
-		readerWg.Wait()
+		// Wait for reader goroutine to finish, respecting context cancellation
+		waitErr := waitGroupWithContext(execCtx, &readerWg)
+		if waitErr != nil {
+			// If waiting was interrupted by context cancellation, handle it
+			// The rest of the function will use execCtx.Err() to detect this
+		}
 
-		// --- Wait for Command Completion and Process Final Status ---
-		waitErr := execCmd.Wait() // This will return an error if the context caused termination
+		// Wait for command completion and process final status
+		waitErr = execCmd.Wait() // This will return an error if the context caused termination
 		duration := time.Since(startTime)
 
-		finalStatus := StatusSucceeded // Assume success initially
-		errMsg := ""
-		message := fmt.Sprintf("Command finished in %v.", duration.Round(time.Millisecond))
-
-		// Check context error first, as it overrides waitErr
-		contextErr := execCtx.Err()
-		if contextErr == context.DeadlineExceeded {
-			finalStatus = StatusFailed
-			// Report the actual timeout duration that caused the deadline
-			// This requires knowing if it was the internal or parent context deadline.
-			// For simplicity, we'll report the internal one, but acknowledge parent could cause it.
-			errMsg = fmt.Sprintf("Command timed out (internal deadline: %v)", internalTimeout)
-			message = "Command execution timed out."
-		} else if contextErr == context.Canceled {
-			finalStatus = StatusFailed
-			errMsg = "Command execution cancelled by parent context."
-			message = "Command execution cancelled."
-		} else if waitErr != nil {
-			// Context was okay, so this is a command execution error (like non-zero exit)
-			finalStatus = StatusFailed
-			if exitErr, ok := waitErr.(*exec.ExitError); ok {
-				errMsg = fmt.Sprintf("Command failed with exit code %d: %s", exitErr.ExitCode(), waitErr.Error())
-			} else {
-				// Other errors (e.g., I/O problems reported by Wait)
-				errMsg = fmt.Sprintf("Command execution failed after wait: %v", waitErr)
-			}
-			message = "Command execution failed."
-		}
-
-		// Read CWD file (attempt even on error/cancel, might have been written before kill)
-		cwdFilePath := fmt.Sprintf("/tmp/%s.cwd", bashCmd.CommandID)
-		cwdBytes, readErr := os.ReadFile(cwdFilePath)
-		if readErr == nil {
-			finalCwd := strings.TrimSpace(string(cwdBytes))
-			message += fmt.Sprintf(" Final CWD: %s.", finalCwd)
-		} else {
-			// Only report CWD read error if the command didn't fail due to context cancellation
-			if contextErr == nil {
-				message += " (Could not read final CWD)."
-			}
-		}
-
-		// --- Send Final Result ---
-		results <- OutputResult{
-			CommandID:   bashCmd.CommandID,
-			CommandType: CmdBashExec,
-			Status:      finalStatus,
-			Message:     message,
-			Error:       errMsg,
-			// ResultData is empty for the final status message
-		}
+		// Send final result
+		finalResult := processFinalResult(execCtx, execCmd, bashCmd, waitErr, duration, internalTimeout)
+		results <- finalResult
 	}()
 
 	return results, nil
 }
 
-// Helper to create a standardized error result
+// setupCommand prepares the exec.Command for execution with the bash script.
+// It configures stdout and stderr pipes and returns the command, a combined reader for
+// stdout and stderr, and any error that occurred during setup.
+func setupCommand(ctx context.Context, bashCmd BashExecCommand) (*exec.Cmd, io.Reader, error) {
+	// Construct the full script
+	fullScript := fmt.Sprintf(bashScriptTemplate, bashCmd.CommandID, bashCmd.Command)
+
+	// Prepare command for streaming using the execution context
+	execCmd := exec.CommandContext(ctx, "/bin/bash", "-c", fullScript)
+
+	stdoutPipe, err := execCmd.StdoutPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+
+	stderrPipe, err := execCmd.StderrPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get stderr pipe: %w", err)
+	}
+
+	// Combine stdout and stderr for reading
+	combinedPipe := io.MultiReader(stdoutPipe, stderrPipe)
+
+	return execCmd, combinedPipe, nil
+}
+
+// streamCommandOutput reads from the provided reader and sends each line to the results channel.
+// The function respects context cancellation and reports errors appropriately.
+// It uses the provided WaitGroup to signal when all output has been processed.
+func streamCommandOutput(ctx context.Context, reader io.Reader, cmd BashExecCommand,
+	results chan<- OutputResult, wg *sync.WaitGroup) {
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		scanner := bufio.NewScanner(reader)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			// Check if the context was cancelled before sending the next line
+			select {
+			case <-ctx.Done():
+				// If context is cancelled (timeout or external), stop sending lines.
+				return
+			default:
+				// Context still active, send the result
+				results <- OutputResult{
+					CommandID:   cmd.CommandID,
+					CommandType: CmdBashExec,
+					Status:      StatusRunning,
+					ResultData:  line + "\n", // Add newline back as scanner strips it
+				}
+			}
+		}
+
+		scannerErr := scanner.Err()
+		if scannerErr != nil && ctx.Err() == nil {
+			// Don't send error if context was cancelled, as that's the primary error
+			results <- createErrorResult(cmd, fmt.Sprintf("Error reading command output: %v", scannerErr))
+		}
+	}()
+}
+
+// processFinalResult determines the final status of a command execution and creates
+// an appropriate OutputResult. It handles various error conditions including timeouts,
+// cancellations, and command execution failures.
+// It also attempts to read the final working directory from the temporary file.
+func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd BashExecCommand,
+	waitErr error, duration time.Duration, timeout time.Duration) OutputResult {
+
+	finalStatus := StatusSucceeded // Assume success initially
+	errMsg := ""
+	message := fmt.Sprintf("Command finished in %v.", duration.Round(time.Millisecond))
+
+	// Check context error first, as it overrides waitErr
+	contextErr := ctx.Err()
+	if contextErr == context.DeadlineExceeded {
+		finalStatus = StatusFailed
+		errMsg = fmt.Sprintf("Command timed out (internal deadline: %v)", timeout)
+		message = "Command execution timed out."
+	} else if contextErr == context.Canceled {
+		finalStatus = StatusFailed
+		errMsg = "Command execution cancelled by parent context."
+		message = "Command execution cancelled."
+	} else if waitErr != nil {
+		// Context was okay, so this is a command execution error (like non-zero exit)
+		finalStatus = StatusFailed
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			errMsg = fmt.Sprintf("Command failed with exit code %d: %s", exitErr.ExitCode(), waitErr.Error())
+		} else {
+			// Other errors (e.g., I/O problems reported by Wait)
+			errMsg = fmt.Sprintf("Command execution failed after wait: %v", waitErr)
+		}
+		message = "Command execution failed."
+	}
+
+	// Read CWD file (attempt even on error/cancel, might have been written before kill)
+	cwdFilePath := fmt.Sprintf("/tmp/%s.cwd", bashCmd.CommandID)
+	cwdBytes, readErr := os.ReadFile(cwdFilePath)
+	if readErr == nil {
+		finalCwd := strings.TrimSpace(string(cwdBytes))
+		message += fmt.Sprintf(" Final CWD: %s.", finalCwd)
+	} else if contextErr == nil {
+		// Only report CWD read error if the command didn't fail due to context cancellation
+		message += " (Could not read final CWD)."
+	}
+
+	return OutputResult{
+		CommandID:   bashCmd.CommandID,
+		CommandType: CmdBashExec,
+		Status:      finalStatus,
+		Message:     message,
+		Error:       errMsg,
+	}
+}
+
+// waitGroupWithContext waits for a WaitGroup to complete while respecting context cancellation.
+// Returns nil if the WaitGroup completes normally, or the context's error if the context is
+// canceled before the WaitGroup completes.
+func waitGroupWithContext(ctx context.Context, wg *sync.WaitGroup) error {
+	ch := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	select {
+	case <-ch:
+		return nil // WaitGroup completed normally
+	case <-ctx.Done():
+		return ctx.Err() // Context was canceled
+	}
+}
+
+// createErrorResult creates a standardized error OutputResult for a BashExecCommand.
 func createErrorResult(cmd BashExecCommand, errMsg string) OutputResult {
 	return OutputResult{
 		CommandID:   cmd.CommandID,
@@ -213,7 +277,8 @@ func createErrorResult(cmd BashExecCommand, errMsg string) OutputResult {
 	}
 }
 
-// CreateErrorResult creates an error result for a failed command execution
+// CreateErrorResult creates an error result for a failed command execution.
+// This is a method on BashExecExecutor to satisfy potential interface requirements.
 func (e *BashExecExecutor) CreateErrorResult(cmd BashExecCommand, err error) OutputResult {
 	var errMsg string
 	if err != nil {
