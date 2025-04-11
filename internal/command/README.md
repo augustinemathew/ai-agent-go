@@ -39,15 +39,15 @@ All command outputs (`OutputResult`) share the following general structure. Spec
 
 ### `BASH_EXEC`
 
-Executes a shell command (`BashExecCommand`).
+Executes a shell command (`BashExecCommand`). Supports both single-line and multiline bash scripts.
 
 **Input JSON:**
 
 ```json
 {
   "command_id": "unique-id-1",
-  "description": "Run ls in /tmp",
-  "command": "ls -l /tmp" // The shell command to execute
+  "description": "Run multiline script",
+  "command": "echo \"Starting multiline script...\"\necho \"Current directory: $(pwd)\"\nls -la\necho \"Environment variables:\"\nenv | grep PATH\necho \"Script complete!\""
 }
 ```
 
@@ -58,12 +58,12 @@ The intermediate `RUNNING` messages' `resultData` (stdout/stderr) is concatenate
 
 ```json
 {
-  "command_id": "happy-bash-1",
+  "command_id": "happy-bash-2",
   "commandType": "BASH_EXEC",
   "status": "SUCCEEDED",
-  "message": "Command finished in 5ms. Final CWD: /Users/augustine/ai-agent-backend/ai-agent-v3.",
+  "message": "Command finished in 13ms. Final CWD: /Users/augustine/ai-agent-backend/ai-agent-v3/cmd/commandrunner.",
   "error": "",
-  "resultData": "Hello from Bash!\nStarting main script execution...\nInitial directory: /Users/augustine/ai-agent-backend/ai-agent-v3\n---\n\n############################################\n# Script Exiting\n# Exit Status: 0\n# Final Working Directory: /Users/augustine/ai-agent-backend/ai-agent-v3\n############################################\n"
+  "resultData": "Starting multiline script...\nCurrent directory: /Users/augustine/ai-agent-backend/ai-agent-v3/cmd/commandrunner\ntotal 16\ndrwxr-xr-x@ 3 augustine  staff    96 Apr 10 20:50 .\ndrwxr-xr-x@ 3 augustine  staff    96 Apr 10 20:50 ..\n-rw-r--r--@ 1 augustine  staff  5908 Apr 11 02:03 main.go\nEnvironment variables:\nPATH=/opt/homebrew/Cellar/go/1.24.1/libexec/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/miniconda/base/bin:/opt/homebrew/Caskroom/miniconda/base/condabin\nINFOPATH=/opt/homebrew/share/info:/opt/homebrew/share/info:\nScript complete!\nStarting main script execution...\nInitial directory: /Users/augustine/ai-agent-backend/ai-agent-v3/cmd/commandrunner\n---\n\n############################################\n# Script Exiting\n# Exit Status: 0\n# Final Working Directory: /Users/augustine/ai-agent-backend/ai-agent-v3/cmd/commandrunner\n############################################\n"
 }
 ```
 
