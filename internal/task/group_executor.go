@@ -101,7 +101,7 @@ func (e *GroupExecutor) executeGroupTask(ctx context.Context, taskId string, chi
 		}
 
 		// Process the child task
-		childResult := e.processChildTask(childCtx, childTask)
+		childResult := e.processChildTask(childCtx, childTask, results, taskId, i, len(children))
 		processedTasks++
 
 		// Collect the result
@@ -158,7 +158,8 @@ func (e *GroupExecutor) executeGroupTask(ctx context.Context, taskId string, chi
 }
 
 // processChildTask handles the execution of a single child task and returns its final result.
-func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task) OutputResult {
+// It also forwards task execution updates to the parent's result channel.
+func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task, parentResults chan<- OutputResult, taskId string, childIndex, totalChildren int) OutputResult {
 	// Set the task status to running if it's pending
 	if childTask.Status.IsPending() {
 		childTask.Status = StatusRunning
@@ -198,8 +199,23 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task) O
 	var lastResult OutputResult
 	var resultData strings.Builder
 
-	// Read all results from the channel
+	// Read all results from the channel and forward intermediate results
 	for result := range childResultsChan {
+		// Forward child task execution updates to parent channel
+		// Always forward all child task updates, not just running ones
+		message := fmt.Sprintf("Child task %d/%d [%s]: %s", childIndex+1, totalChildren, childTask.TaskId, result.Message)
+
+		// If there's ResultData and the Message is empty, include the ResultData in the forwarded message
+		if result.ResultData != "" && (result.Message == "" || strings.TrimSpace(result.Message) == "") {
+			message = fmt.Sprintf("Child task %d/%d [%s] output: %s", childIndex+1, totalChildren, childTask.TaskId, strings.TrimSpace(result.ResultData))
+		}
+
+		parentResults <- OutputResult{
+			TaskID:  taskId,
+			Status:  StatusRunning,
+			Message: message,
+		}
+
 		lastResult = result
 		if result.ResultData != "" {
 			resultData.WriteString(result.ResultData)

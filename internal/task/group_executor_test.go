@@ -3,6 +3,8 @@ package task_test
 import (
 	"ai-agent-v3/internal/task"
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -71,6 +73,7 @@ func TestGroupExecutor_Execute_Success(t *testing.T) {
 	var runningResults int
 
 	for result := range resultsChan {
+		fmt.Printf("Result: %+v\n", result)
 		if result.Status == task.StatusRunning {
 			runningResults++
 		}
@@ -433,4 +436,98 @@ func TestGroupExecutor_ChildTaskStatusUpdates(t *testing.T) {
 	// Verify the files were created with correct content
 	verifyFileContent(t, filepath.Join(tempDir, "child1.txt"), "Content from child 1")
 	verifyFileContent(t, filepath.Join(tempDir, "child2.txt"), "Content from child 2")
+}
+
+// TestGroupExecutor_WithFileReadTask verifies the forwarding of child task updates,
+// especially for file read tasks which produce intermediate updates
+func TestGroupExecutor_WithFileReadTask(t *testing.T) {
+	// Create a registry
+	registry := task.NewMapRegistry()
+
+	// Create a group task with a file write and a file read task
+	tempDir := t.TempDir()
+
+	// Create a file with multiple lines to read
+	testFilePath := filepath.Join(tempDir, "test_content.txt")
+	testContent := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
+	err := os.WriteFile(testFilePath, []byte(testContent), 0644)
+	require.NoError(t, err, "Failed to create test file")
+
+	// File write task
+	fileWriteTask := &task.Task{
+		BaseTask: task.BaseTask{
+			TaskId:      "file-write-task",
+			Description: "File write task",
+			Type:        task.TaskFileWrite,
+		},
+		Parameters: task.FileWriteParameters{
+			FilePath: filepath.Join(tempDir, "output.txt"),
+			Content:  "Output from file write task",
+		},
+	}
+
+	// File read task
+	fileReadTask := &task.Task{
+		BaseTask: task.BaseTask{
+			TaskId:      "file-read-task",
+			Description: "File read task",
+			Type:        task.TaskFileRead,
+		},
+		Parameters: task.FileReadParameters{
+			FilePath: testFilePath,
+		},
+	}
+
+	// Create the group task
+	groupTask := task.NewGroupTask("group-with-fileread", "Group with file write and file read tasks", []*task.Task{fileWriteTask, fileReadTask})
+
+	// Execute the group task
+	executor, err := registry.GetExecutor(task.TaskGroup)
+	if err != nil {
+		t.Fatalf("Failed to get GroupExecutor: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resultsChan, err := executor.Execute(ctx, groupTask)
+	if err != nil {
+		t.Fatalf("Failed to execute group task: %v", err)
+	}
+
+	// Collect and log all messages to see the child task updates
+	var messages []string
+	var lastResult task.OutputResult
+
+	for result := range resultsChan {
+		// Log each message to see what's happening
+		t.Logf("Result: %s - %s", result.Status, result.Message)
+		messages = append(messages, result.Message)
+		lastResult = result
+	}
+
+	// Verify execution succeeded
+	assert.Equal(t, task.StatusSucceeded, lastResult.Status, "Group task should have succeeded")
+
+	// Verify we got the file read task output messages
+	fileReadMessageFound := false
+	contentFound := false
+	for _, msg := range messages {
+		// Look for messages that show the file read task's id
+		if strings.Contains(msg, "file-read-task") {
+			fileReadMessageFound = true
+			t.Logf("Found file read task message: %s", msg)
+
+			// Check if we have file content
+			if strings.Contains(msg, "Line") {
+				contentFound = true
+				t.Logf("Found content output: %s", msg)
+			}
+		}
+	}
+	assert.True(t, fileReadMessageFound, "Should have received messages from the file read task execution")
+	assert.True(t, contentFound, "Should have received content output from the file read task")
+
+	// Verify the file was created
+	verifyFileContent(t, filepath.Join(tempDir, "output.txt"), "Output from file write task")
 }
