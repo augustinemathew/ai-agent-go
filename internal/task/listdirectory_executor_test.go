@@ -34,7 +34,7 @@ func TestListDirectoryExecutor_Execute_Success(t *testing.T) {
 	absTempDir, err := filepath.Abs(tempDir)
 	require.NoError(t, err)
 
-	cmd := ListDirectoryTask{
+	cmd := &ListDirectoryTask{
 		BaseTask: BaseTask{TaskId: "test-list-success-1"},
 		Parameters: ListDirectoryParameters{
 			Path: tempDir,
@@ -69,7 +69,7 @@ func TestListDirectoryExecutor_Execute_EmptyDir(t *testing.T) {
 	absTempDir, err := filepath.Abs(tempDir)
 	require.NoError(t, err)
 
-	cmd := ListDirectoryTask{
+	cmd := &ListDirectoryTask{
 		BaseTask: BaseTask{TaskId: "test-list-empty-1"},
 		Parameters: ListDirectoryParameters{
 			Path: tempDir,
@@ -97,7 +97,7 @@ func TestListDirectoryExecutor_Execute_NotFound(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	nonExistentPath := filepath.Join(t.TempDir(), "does_not_exist")
 
-	cmd := ListDirectoryTask{
+	cmd := &ListDirectoryTask{
 		BaseTask: BaseTask{TaskId: "test-list-notfound-1"},
 		Parameters: ListDirectoryParameters{
 			Path: nonExistentPath,
@@ -127,7 +127,7 @@ func TestListDirectoryExecutor_Execute_NotADirectory(t *testing.T) {
 	err := os.WriteFile(filePath, []byte("not a dir"), 0644)
 	require.NoError(t, err, "Failed to create test file")
 
-	cmd := ListDirectoryTask{
+	cmd := &ListDirectoryTask{
 		BaseTask: BaseTask{TaskId: "test-list-notadir-1"},
 		Parameters: ListDirectoryParameters{
 			Path: filePath, // Attempt to list a file
@@ -154,7 +154,7 @@ func TestListDirectoryExecutor_Execute_Cancellation(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	tempDir := t.TempDir()
 
-	cmd := ListDirectoryTask{
+	cmd := &ListDirectoryTask{
 		BaseTask: BaseTask{TaskId: "test-list-cancel-1"},
 		Parameters: ListDirectoryParameters{
 			Path: tempDir,
@@ -182,7 +182,7 @@ func TestListDirectoryExecutor_Execute_Timeout(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	tempDir := t.TempDir()
 
-	cmd := ListDirectoryTask{
+	cmd := &ListDirectoryTask{
 		BaseTask: BaseTask{TaskId: "test-list-timeout-1"},
 		Parameters: ListDirectoryParameters{
 			Path: tempDir,
@@ -246,7 +246,7 @@ func TestListDirectoryExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := ListDirectoryTask{
+			cmd := &ListDirectoryTask{
 				BaseTask: BaseTask{
 					TaskId:      "terminal-listdir-test",
 					Description: "Terminal listdirectory task test",

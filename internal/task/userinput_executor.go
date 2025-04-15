@@ -21,12 +21,12 @@ func NewRequestUserInputExecutor() *RequestUserInputExecutor {
 }
 
 // Execute handles the request for user input specified in the RequestUserInput command.
-// It expects the cmd argument to be of type RequestUserInput.
+// It expects the cmd argument to be of type *RequestUserInputTask.
 // The actual user interaction mechanism is assumed to be handled elsewhere;
 // this method just returns the prompt message.
 func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	// Type assertion to ensure we have a RequestUserInput command
-	userInputCmd, ok := cmd.(RequestUserInputTask)
+	// Type assertion to ensure we have a RequestUserInputTask command
+	userInputCmd, ok := cmd.(*RequestUserInputTask)
 	if !ok {
 		return nil, fmt.Errorf(errUserInputInvalidCommandType, cmd)
 	}

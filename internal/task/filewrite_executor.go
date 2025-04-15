@@ -51,8 +51,6 @@ func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 	switch v := cmd.(type) {
 	case *FileWriteTask:
 		fileWriteCmd = v
-	case FileWriteTask:
-		fileWriteCmd = &v
 	default:
 		return nil, fmt.Errorf(errFileWriteInvalidCommandType)
 	}
@@ -74,30 +72,45 @@ func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 
 		// Check context before starting
 		if err := ctx.Err(); err != nil {
-			results <- createFinalResult(fileWriteCmd.TaskId, "", err, time.Since(startTime))
+			finalResult := createFinalResult(fileWriteCmd.TaskId, "", err, time.Since(startTime))
+			fileWriteCmd.Status = finalResult.Status
+			fileWriteCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Resolve the file path
 		resolvedPath, err := fileutils.ResolveFilePath(fileWriteCmd.Parameters.FilePath, fileWriteCmd.Parameters.WorkingDirectory)
 		if err != nil {
-			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, fmt.Errorf(errFileWriteResolveFilePath, err), time.Since(startTime))
+			finalResult := createFinalResult(fileWriteCmd.TaskId, resolvedPath, fmt.Errorf(errFileWriteResolveFilePath, err), time.Since(startTime))
+			fileWriteCmd.Status = finalResult.Status
+			fileWriteCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Check context before writing file
 		if err := ctx.Err(); err != nil {
-			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, err, time.Since(startTime))
+			finalResult := createFinalResult(fileWriteCmd.TaskId, resolvedPath, err, time.Since(startTime))
+			fileWriteCmd.Status = finalResult.Status
+			fileWriteCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Write the file
 		if err := writeFileContent(ctx, resolvedPath, fileWriteCmd.Parameters.Content); err != nil {
-			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, err, time.Since(startTime))
+			finalResult := createFinalResult(fileWriteCmd.TaskId, resolvedPath, err, time.Since(startTime))
+			fileWriteCmd.Status = finalResult.Status
+			fileWriteCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
-		results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, nil, time.Since(startTime))
+		finalResult := createFinalResult(fileWriteCmd.TaskId, resolvedPath, nil, time.Since(startTime))
+		fileWriteCmd.Status = finalResult.Status
+		fileWriteCmd.UpdateOutput(&finalResult)
+		results <- finalResult
 	}()
 
 	return results, nil

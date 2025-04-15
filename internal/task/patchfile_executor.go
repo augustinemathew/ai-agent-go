@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/sourcegraph/go-diff/diff"
@@ -357,6 +358,11 @@ func (fs *defaultFileSystem) ReadFile(name string) ([]byte, error) {
 }
 
 func (fs *defaultFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
+	// Ensure the directory exists before writing the file
+	dir := filepath.Dir(name)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
 	return os.WriteFile(name, data, perm)
 }
 
@@ -366,8 +372,9 @@ func (fs *defaultFileSystem) Stat(name string) (os.FileInfo, error) {
 
 func (fs *defaultFileSystem) LockFile(name string) (func(), error) {
 	// Get or create a mutex for this file
-	lock, _ := fs.fileLocks.LoadOrStore(name, &sync.Mutex{})
-	mutex := lock.(*sync.Mutex)
+	lockKey := filepath.Clean(name)
+	lockValue, _ := fs.fileLocks.LoadOrStore(lockKey, &sync.Mutex{})
+	mutex := lockValue.(*sync.Mutex)
 
 	// Lock the mutex
 	mutex.Lock()
@@ -430,10 +437,8 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 	switch c := cmd.(type) {
 	case *PatchFileTask:
 		patchCmd = c
-	case PatchFileTask:
-		patchCmd = &c
 	default:
-		return nil, fmt.Errorf("invalid command type: expected *PatchFileCommand or PatchFileCommand, got %T", cmd)
+		return nil, fmt.Errorf("invalid command type: expected *PatchFileTask, got %T", cmd)
 	}
 
 	// Check if task is already in a terminal state
@@ -456,14 +461,20 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 
 		// Check context before each operation
 		if err := ctx.Err(); err != nil {
-			results <- formatResult(patchCmd, StatusFailed, "File patching cancelled.", err)
+			finalResult := formatResult(patchCmd, StatusFailed, "File patching cancelled.", err)
+			patchCmd.Status = finalResult.Status
+			patchCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Lock the file for exclusive access
-		unlock, err := e.fs.(*defaultFileSystem).LockFile(patchCmd.Parameters.FilePath)
+		unlock, err := e.fs.LockFile(patchCmd.Parameters.FilePath)
 		if err != nil {
-			results <- formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to lock file: %v", err), err)
+			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to lock file: %v", err), err)
+			patchCmd.Status = finalResult.Status
+			patchCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 		defer unlock()
@@ -471,37 +482,55 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		// Read original file
 		originalContent, err := e.readOriginalFile(patchCmd.Parameters.FilePath)
 		if err != nil {
-			results <- formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to read original file: %v", err), err)
+			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to read original file: %v", err), err)
+			patchCmd.Status = finalResult.Status
+			patchCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Check context before applying patch
 		if err := ctx.Err(); err != nil {
-			results <- formatResult(patchCmd, StatusFailed, "File patching cancelled before applying patch.", err)
+			finalResult := formatResult(patchCmd, StatusFailed, "File patching cancelled before applying patch.", err)
+			patchCmd.Status = finalResult.Status
+			patchCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Apply patch
 		patchedContent, err := e.applyPatch(originalContent, []byte(patchCmd.Parameters.Patch))
 		if err != nil {
-			results <- formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to apply patch: %v", err), err)
+			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to apply patch: %v", err), err)
+			patchCmd.Status = finalResult.Status
+			patchCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Check context before writing file
 		if err := ctx.Err(); err != nil {
-			results <- formatResult(patchCmd, StatusFailed, "File patching cancelled before writing to file.", err)
+			finalResult := formatResult(patchCmd, StatusFailed, "File patching cancelled before writing to file.", err)
+			patchCmd.Status = finalResult.Status
+			patchCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Write patched file
 		if err := e.writePatchedFile(patchCmd.Parameters.FilePath, patchedContent); err != nil {
-			results <- formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to write patched file: %v", err), err)
+			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to write patched file: %v", err), err)
+			patchCmd.Status = finalResult.Status
+			patchCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Send success result
-		results <- formatResult(patchCmd, StatusSucceeded, fmt.Sprintf("Successfully patched file %s", patchCmd.Parameters.FilePath), nil)
+		finalResult := formatResult(patchCmd, StatusSucceeded, fmt.Sprintf("Successfully patched file %s", patchCmd.Parameters.FilePath), nil)
+		patchCmd.Status = finalResult.Status
+		patchCmd.UpdateOutput(&finalResult)
+		results <- finalResult
 	}()
 
 	return results, nil

@@ -65,7 +65,7 @@ func TestBashExecExecutor_Execute_Success_Streaming(t *testing.T) {
 	wd, _ := os.Getwd()
 	expectedCmdOutput := "Hello Executor!\n"
 	testCmd := fmt.Sprintf("echo '%s' && pwd", strings.TrimSpace(expectedCmdOutput)) // pwd output goes to stdout
-	cmd := BashExecTask{
+	cmd := &BashExecTask{
 		BaseTask: BaseTask{TaskId: "test-success-stream-1"},
 		Parameters: BashExecParameters{
 			Command: testCmd,
@@ -114,7 +114,7 @@ func TestBashExecExecutor_Execute_Failure_Streaming(t *testing.T) {
 	wd, _ := os.Getwd() // Get current WD to check the file content
 	expectedCmdOutput := "Going to fail\n"
 	testCmd := fmt.Sprintf("echo '%s' && exit 123", strings.TrimSpace(expectedCmdOutput))
-	cmd := BashExecTask{
+	cmd := &BashExecTask{
 		BaseTask: BaseTask{TaskId: "test-fail-stream-1"},
 		Parameters: BashExecParameters{
 			Command: testCmd,
@@ -162,7 +162,7 @@ func TestBashExecExecutor_Execute_CombinedOutput_Streaming(t *testing.T) {
 	expectedStdout := "Output to stdout\n"
 	expectedStderr := "Error to stderr\n"
 	testCmd := fmt.Sprintf("echo '%s' >&1 && echo '%s' >&2", strings.TrimSpace(expectedStdout), strings.TrimSpace(expectedStderr))
-	cmd := BashExecTask{
+	cmd := &BashExecTask{
 		BaseTask: BaseTask{TaskId: "test-combined-stream-1"},
 		Parameters: BashExecParameters{
 			Command: testCmd,
@@ -207,7 +207,7 @@ func TestBashExecExecutor_Execute_ChangeDirectory_Streaming(t *testing.T) {
 	expectedCmdOutput := "Changed directory\n"
 	expectedFinalWd := "/private/tmp" // Expected final path on macOS, adjust if needed for other OS
 	testCmd := fmt.Sprintf("cd %s && echo '%s'", expectedFinalWd, strings.TrimSpace(expectedCmdOutput))
-	cmd := BashExecTask{
+	cmd := &BashExecTask{
 		BaseTask: BaseTask{TaskId: "test-cd-stream-1"},
 		Parameters: BashExecParameters{
 			Command: testCmd,
@@ -254,7 +254,7 @@ func TestBashExecExecutor_Execute_Timeout_Streaming(t *testing.T) {
 	const testTimeout = 100 * time.Millisecond
 	executor := NewBashExecExecutor()
 	testCmd := "echo 'Starting sleep...' && sleep 1 && echo 'Finished sleep'"
-	cmd := BashExecTask{
+	cmd := &BashExecTask{
 		BaseTask: BaseTask{TaskId: "test-timeout-stream-1"},
 		Parameters: BashExecParameters{
 			Command: testCmd,
@@ -313,7 +313,7 @@ func TestBashExecExecutor_Execute_Cancellation_Streaming(t *testing.T) {
 	executor := NewBashExecExecutor()
 	// Command that would run for a while (reduced sleep time)
 	testCmd := "echo 'Starting long process...' && sleep 1 && echo 'Finished long process'"
-	cmd := BashExecTask{
+	cmd := &BashExecTask{
 		BaseTask: BaseTask{TaskId: "test-cancel-stream-1"},
 		Parameters: BashExecParameters{
 			Command: testCmd,
@@ -350,7 +350,7 @@ func TestBashExecExecutor_Execute_Cancellation_Streaming(t *testing.T) {
 func TestBashExecExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewBashExecExecutor()
 	// Create a command of the wrong type
-	cmd := FileReadTask{
+	cmd := &FileReadTask{
 		BaseTask: BaseTask{TaskId: "invalid-type-stream-1"},
 		Parameters: FileReadParameters{
 			FilePath: "/some/file",
@@ -367,7 +367,8 @@ func TestBashExecExecutor_Execute_InvalidCommandType(t *testing.T) {
 
 func TestBashExecExecutor_CreateErrorResult(t *testing.T) {
 	executor := NewBashExecExecutor()
-	cmd := BashExecTask{
+
+	cmd := &BashExecTask{
 		BaseTask: BaseTask{
 			TaskId:      "test-error",
 			Description: "Test error result",
@@ -440,7 +441,7 @@ func TestBashExecExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := BashExecTask{
+			cmd := &BashExecTask{
 				BaseTask: BaseTask{
 					TaskId:      "terminal-bash-test",
 					Description: "Terminal bash task test",

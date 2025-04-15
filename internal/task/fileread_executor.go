@@ -39,11 +39,11 @@ func NewFileReadExecutor() *FileReadExecutor {
 }
 
 // Execute reads the file specified in the FileReadCommand, streaming its content.
-// It expects the cmd argument to be of type FileReadCommand.
+// It expects the cmd argument to be of type *FileReadTask.
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 // The execution respects cancellation signals from the passed context.Context.
 func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	fileReadCmd, ok := cmd.(FileReadTask)
+	fileReadCmd, ok := cmd.(*FileReadTask)
 	if !ok {
 		return nil, fmt.Errorf(errInvalidCommandType, cmd)
 	}
@@ -60,7 +60,7 @@ func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 }
 
 // executeFileRead handles the actual file reading process in a separate goroutine.
-func (e *FileReadExecutor) executeFileRead(ctx context.Context, cmd FileReadTask, results chan<- OutputResult) {
+func (e *FileReadExecutor) executeFileRead(ctx context.Context, cmd *FileReadTask, results chan<- OutputResult) {
 	defer close(results)
 
 	// Update task status to Running
@@ -124,7 +124,7 @@ func validateLineNumbers(params FileReadParameters) error {
 }
 
 // readAndStreamFile reads the file and streams its content to the results channel.
-func (e *FileReadExecutor) readAndStreamFile(ctx context.Context, cmd FileReadTask, file *os.File, results chan<- OutputResult) error {
+func (e *FileReadExecutor) readAndStreamFile(ctx context.Context, cmd *FileReadTask, file *os.File, results chan<- OutputResult) error {
 	scanner := bufio.NewScanner(file)
 	currentLine := 1
 
@@ -175,7 +175,7 @@ func (e *FileReadExecutor) readAndStreamFile(ctx context.Context, cmd FileReadTa
 }
 
 // createFinalResult creates the final OutputResult with appropriate status and message.
-func (e *FileReadExecutor) createFinalResult(cmd FileReadTask, startTime time.Time, finalErr error) OutputResult {
+func (e *FileReadExecutor) createFinalResult(cmd *FileReadTask, startTime time.Time, finalErr error) OutputResult {
 	var status TaskStatus
 	var message string
 	var errMsg string
@@ -205,7 +205,7 @@ func (e *FileReadExecutor) createFinalResult(cmd FileReadTask, startTime time.Ti
 }
 
 // sendFinalResult sends the final result with appropriate status and message.
-func (e *FileReadExecutor) sendFinalResult(cmd FileReadTask, results chan<- OutputResult, startTime time.Time, finalErr error) {
+func (e *FileReadExecutor) sendFinalResult(cmd *FileReadTask, results chan<- OutputResult, startTime time.Time, finalErr error) {
 	finalResult := e.createFinalResult(cmd, startTime, finalErr)
 
 	// Update the task status and output

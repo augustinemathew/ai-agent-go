@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -137,7 +138,7 @@ func TestPatchFileExecutor_Execute_Success(t *testing.T) {
 			}
 
 			executor := NewPatchFileExecutor()
-			cmd := PatchFileTask{
+			cmd := &PatchFileTask{
 				BaseTask: BaseTask{TaskId: tc.commandID},
 				Parameters: PatchFileParameters{
 					FilePath: filePath,
@@ -205,7 +206,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Empty File Path",
-			cmd: PatchFileTask{
+			cmd: &PatchFileTask{
 				BaseTask: BaseTask{TaskId: "fail-path-1"},
 				Parameters: PatchFileParameters{
 					FilePath: "",
@@ -843,7 +844,7 @@ func TestPatchFileExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := PatchFileTask{
+			cmd := &PatchFileTask{
 				BaseTask: BaseTask{
 					TaskId:      "terminal-patchfile-test",
 					Description: "Terminal patchfile task test",
@@ -884,4 +885,95 @@ func TestPatchFileExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 			assert.False(t, ok, "Channel should be closed after sending the result")
 		})
 	}
+}
+
+func TestConcurrentPatchOps(t *testing.T) {
+	t.Run("Concurrent_Same_File", func(t *testing.T) {
+		// Create temporary directory
+		tempDir := t.TempDir()
+
+		// Create test file with initial content
+		testFilePath := filepath.Join(tempDir, "test_file.txt")
+		initialContent := "content"
+		err := os.WriteFile(testFilePath, []byte(initialContent), 0644)
+		require.NoError(t, err, "Failed to write test file")
+
+		// Create patch executor
+		patchExecutor := NewPatchFileExecutor()
+
+		// Number of concurrent patches to apply
+		numPatches := 5
+		var wg sync.WaitGroup
+		results := make([]OutputResult, 0, numPatches)
+		var resultsMutex sync.Mutex
+
+		// Create patches that append additional content so they don't conflict completely
+		for i := 0; i < numPatches; i++ {
+			i := i // Capture loop variable
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				// Read current file content before creating patch
+				currentContent, err := os.ReadFile(testFilePath)
+				if err != nil {
+					t.Logf("Patch %d: Error reading file: %v", i, err)
+					currentContent = []byte(initialContent) // Fallback to initial content
+				}
+
+				// Create a unified diff patch to add a new line with our index
+				patch := fmt.Sprintf("--- %s\n+++ %s\n@@ -1 +1,2 @@\n %s\n+new line %d\n",
+					testFilePath, testFilePath, string(currentContent), i)
+
+				cmd := &PatchFileTask{
+					BaseTask: BaseTask{
+						TaskId:      fmt.Sprintf("patch-cmd-%d", i),
+						Description: "Patch file task test",
+						Status:      StatusPending,
+					},
+					Parameters: PatchFileParameters{
+						FilePath: testFilePath,
+						Patch:    patch,
+					},
+				}
+
+				ctx := context.Background()
+				resultChan, err := patchExecutor.Execute(ctx, cmd)
+				require.NoError(t, err, "Failed to execute patch %d", i)
+
+				// Collect results
+				for result := range resultChan {
+					t.Logf("Patch %d result: status=%s, error=%v", i, result.Status, result.Error)
+					resultsMutex.Lock()
+					results = append(results, result)
+					resultsMutex.Unlock()
+				}
+			}()
+		}
+
+		// Wait for all patches to complete
+		wg.Wait()
+
+		// Read final file content
+		finalContent, err := os.ReadFile(testFilePath)
+		require.NoError(t, err, "Failed to read final content")
+
+		// Verify that at least one patch succeeded
+		successCount := 0
+		for _, result := range results {
+			if result.Status == StatusSucceeded {
+				successCount++
+			}
+		}
+
+		require.GreaterOrEqual(t, successCount, 1, "At least one patch should succeed")
+
+		// Final content should contain "new line" at least once
+		require.NotEmpty(t, finalContent, "File content should not be empty")
+		require.Contains(t, string(finalContent), "new line", "File should contain the patched content")
+
+		t.Logf("Final file content: %s", string(finalContent))
+		t.Logf("Success count: %d out of %d attempts", successCount, numPatches)
+	})
 }

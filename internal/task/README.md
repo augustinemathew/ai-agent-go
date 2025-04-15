@@ -4,6 +4,9 @@ This package defines and executes various tasks asynchronously within the AI age
 
 ## Recent Updates
 
+- **Improved GroupExecutor Status Propagation**: Enhanced status updates from child tasks to parent group tasks, providing real-time visibility into execution progress.
+- **Race Condition Prevention**: Implemented file locking mechanism in the PatchFileExecutor to safely handle concurrent operations on the same files.
+- **Pointer Type Consistency**: Fixed issues with task type handling to ensure all executors consistently work with pointer types rather than value types.
 - **Logging Improvements**: Removed unnecessary debugging logs from all executors for cleaner code and better performance.
 - **Test Consistency**: Aligned test assertions with current implementation for more reliable testing.
 - **Code Cleanup**: Streamlined executor implementations for better readability and maintainability.
@@ -24,11 +27,139 @@ Each executor now follows a more consistent pattern:
 - **Consistent Error Messages**: Standardized error reporting format across executor types
 - **Status Transitions**: Clear state management from PENDING → RUNNING → SUCCEEDED/FAILED
 
+### Concurrent Operation Safety
+
+- **File Locking Mechanism**: PatchFileExecutor now uses filesystem locks to prevent race conditions during concurrent patches to the same file
+- **Atomic Updates**: Write operations are performed in an atomic way to ensure data integrity
+- **Enhanced Group Executor**: Properly handles task pointers throughout child task processing, ensuring consistent behavior
+- **Status Propagation**: Improved mechanism for child tasks to report their status changes to parent tasks
+
 ### Performance Optimization
 
 - **Reduced Logging Overhead**: Removed debug logging to improve performance
 - **Efficient Channel Management**: Optimized channel usage to prevent leaks
 - **Simplified Code Paths**: Straightforward execution flow improves maintainability
+
+## Task Mutation During Execution
+
+Executors **modify the Task objects** that are passed to them. This is an intentional design pattern that allows tasks to maintain their state and results. It's important to be aware of this behavior when working with tasks.
+
+### Example: BashExec Task Before and After Execution
+
+**Before Execution:**
+```json
+{
+  "TaskId": "bash-example",
+  "Description": "Simple echo command",
+  "Type": "",
+  "Status": "",
+  "Children": null,
+  "Output": {
+    "task_id": "",
+    "status": "",
+    "message": "",
+    "error": "",
+    "resultData": ""
+  },
+  "Parameters": {
+    "Command": "echo \"Hello World\"",
+    "WorkingDirectory": ""
+  }
+}
+```
+
+**After Execution:**
+```json
+{
+  "TaskId": "bash-example",
+  "Description": "Simple echo command",
+  "Type": "",
+  "Status": "SUCCEEDED",
+  "Children": null,
+  "Output": {
+    "task_id": "bash-example",
+    "status": "SUCCEEDED",
+    "message": "Command completed successfully in 5ms. Final CWD: /path/to/workdir.",
+    "error": "",
+    "resultData": "Hello World\n"
+  },
+  "Parameters": {
+    "Command": "echo \"Hello World\"",
+    "WorkingDirectory": ""
+  }
+}
+```
+
+### Example: FileRead Task Before and After Execution
+
+**Before Execution:**
+```json
+{
+  "TaskId": "read-example",
+  "Description": "Read a file",
+  "Type": "",
+  "Status": "",
+  "Children": null,
+  "Output": {
+    "task_id": "",
+    "status": "",
+    "message": "",
+    "error": "",
+    "resultData": ""
+  },
+  "Parameters": {
+    "FilePath": "/path/to/file.txt",
+    "StartLine": 0,
+    "EndLine": 0,
+    "WorkingDirectory": ""
+  }
+}
+```
+
+**After Execution:**
+```json
+{
+  "TaskId": "read-example",
+  "Description": "Read a file",
+  "Type": "",
+  "Status": "SUCCEEDED",
+  "Children": null,
+  "Output": {
+    "task_id": "read-example",
+    "status": "SUCCEEDED",
+    "message": "File reading finished successfully in 0s.",
+    "error": "",
+    "resultData": "File content goes here\nSecond line\n"
+  },
+  "Parameters": {
+    "FilePath": "/path/to/file.txt",
+    "StartLine": 0,
+    "EndLine": 0,
+    "WorkingDirectory": ""
+  }
+}
+```
+
+### Key Changes During Execution
+
+1. **Status Field**: Changes from empty (PENDING) to RUNNING (not shown) and finally to SUCCEEDED or FAILED
+2. **Output Field**: Gets populated with:
+   - `task_id`: Set to match the task's TaskId
+   - `status`: Set to match the task's Status
+   - `message`: Human-readable message about the execution
+   - `error`: If the task failed, contains error details
+   - `resultData`: Task-specific output data
+
+### Important Design Note
+
+Since executors mutate the input task object, if you need to preserve the original task state, you should make a copy before passing it to an executor:
+
+```go
+// Create a copy of the task
+taskCopy := originalTask
+resultsChannel, err := executor.Execute(ctx, &taskCopy)
+// originalTask is unchanged, taskCopy is mutated
+```
 
 ## Core Concepts
 
@@ -188,19 +319,57 @@ func (e *SampleExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputRes
 
 Executes a shell command (`BashExecTask`). Supports both single-line and multiline bash scripts.
 
-**Input JSON:**
+**Complete Task Example:**
 
 ```json
 {
-  "task_id": "unique-id-1",
-  "description": "Run multiline script",
-  "parameters": {
-    "command": "echo \"Starting multiline script...\"\necho \"Current directory: $(pwd)\"\nls -la\necho \"Environment variables:\"\nenv | grep PATH\necho \"Script complete!\""
+  "BaseTask": {
+    "TaskId": "happy-bash-2",
+    "Description": "Run multiline script",
+    "Type": "",
+    "Status": "",
+    "Children": null,
+    "Output": {
+      "task_id": "",
+      "status": "",
+      "message": "",
+      "error": "",
+      "resultData": ""
+    }
+  },
+  "Parameters": {
+    "Command": "echo \"Starting multiline script...\"\necho \"Current directory: $(pwd)\"\nls -la\necho \"Environment variables:\"\nenv | grep PATH\necho \"Script complete!\"",
+    "WorkingDirectory": ""
   }
 }
 ```
 
-**Output JSON (Success Example):**
+**After Execution:**
+
+```json
+{
+  "BaseTask": {
+    "TaskId": "happy-bash-2",
+    "Description": "Run multiline script",
+    "Type": "",
+    "Status": "SUCCEEDED",
+    "Children": null,
+    "Output": {
+      "task_id": "happy-bash-2",
+      "status": "SUCCEEDED",
+      "message": "Command completed successfully in 10ms. Final CWD: /Users/augustine/ai-agent-4/ai-agent-go.",
+      "error": "",
+      "resultData": "Starting multiline script...\nCurrent directory: /Users/augustine/ai-agent-4/ai-agent-go\ntotal 24\ndrwxr-xr-x   9 augustine  staff   288 Apr 14 22:43 .\ndrwxr-xr-x   3 augustine  staff    96 Apr 14 17:50 ..\ndrwxr-xr-x@  3 augustine  staff    96 Apr 14 18:25 .cursor\ndrwxr-xr-x  12 augustine  staff   384 Apr 14 23:09 .git\n-rw-r--r--   1 augustine  staff   414 Apr 14 17:50 .gitignore\ndrwxr-xr-x   3 augustine  staff    96 Apr 14 17:50 cmd\n-rw-r--r--@  1 augustine  staff   299 Apr 14 18:00 go.mod\n-rw-r--r--   1 augustine  staff  1658 Apr 14 17:50 go.sum\ndrwxr-xr-x   3 augustine  staff    96 Apr 14 17:55 internal\nEnvironment variables:\nPATH=/opt/homebrew/Cellar/go/1.24.1/libexec/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/miniconda/base/bin:/opt/homebrew/Caskroom/miniconda/base/condabin\nINFOPATH=/opt/homebrew/share/info:/opt/homebrew/share/info:\nScript complete!\nStarting main script execution...\nInitial directory: /Users/augustine/ai-agent-4/ai-agent-go\n---\n\n############################################\n# Script Exiting\n# Exit Status: 0\n# Final Working Directory: /Users/augustine/ai-agent-4/ai-agent-go\n############################################\n"
+    }
+  },
+  "Parameters": {
+    "Command": "echo \"Starting multiline script...\"\necho \"Current directory: $(pwd)\"\nls -la\necho \"Environment variables:\"\nenv | grep PATH\necho \"Script complete!\"",
+    "WorkingDirectory": ""
+  }
+}
+```
+
+**Result JSON Only:**
 
 ```json
 {
@@ -217,21 +386,60 @@ Executes a shell command (`BashExecTask`). Supports both single-line and multili
 
 Reads the contents of a file, optionally from specific line numbers.
 
-**Input JSON:**
+**Complete Task Example:**
 
 ```json
 {
-  "task_id": "read-1",
-  "description": "Read file contents",
-  "parameters": {
-    "file_path": "/path/to/file.txt",
-    "start_line": 2,  // Optional: 1-based line number to start reading from (0 means start from beginning)
-    "end_line": 4     // Optional: 1-based line number to read until (0 means read until end)
+  "BaseTask": {
+    "TaskId": "read-1",
+    "Description": "Read file contents",
+    "Type": "",
+    "Status": "",
+    "Children": null,
+    "Output": {
+      "task_id": "",
+      "status": "",
+      "message": "",
+      "error": "",
+      "resultData": ""
+    }
+  },
+  "Parameters": {
+    "FilePath": "/path/to/file.txt",
+    "StartLine": 2,
+    "EndLine": 4,
+    "WorkingDirectory": ""
   }
 }
 ```
 
-**Example Output JSON:**
+**After Execution:**
+
+```json
+{
+  "BaseTask": {
+    "TaskId": "read-1",
+    "Description": "Read file contents",
+    "Type": "",
+    "Status": "SUCCEEDED",
+    "Children": null,
+    "Output": {
+      "task_id": "read-1",
+      "status": "SUCCEEDED",
+      "message": "File reading finished successfully in 0s.",
+      "resultData": "This is line 2\nThis is line 3\nThis is line 4\n"
+    }
+  },
+  "Parameters": {
+    "FilePath": "/path/to/file.txt",
+    "StartLine": 2,
+    "EndLine": 4,
+    "WorkingDirectory": ""
+  }
+}
+```
+
+**Result JSON Only:**
 
 ```json
 {
@@ -242,41 +450,78 @@ Reads the contents of a file, optionally from specific line numbers.
 }
 ```
 
-**Notes:**
-- If `start_line` is 0 or omitted, reading starts from the beginning of the file
-- If `end_line` is 0 or omitted, reading continues until the end of the file
-- Line numbers are 1-based (first line is line 1)
-- Invalid line numbers (negative) will result in a failure
-- If `start_line` is after `end_line`, the command will fail
-
 ---
 
 ### `FILE_WRITE`
 
-Writes content to a file, overwriting if it exists (`FileWriteCommand`).
+Writes content to a file, overwriting if it exists (`FileWriteTask`).
 
-**Input JSON:**
+**Complete Task Example:**
 
 ```json
 {
-  "task_id": "unique-id-3",
-  "description": "Write initial data",
-  "parameters": {
-    "file_path": "/path/to/output.txt", // Path to the file to write
-    "content": "This is the content to write.\nSecond line."
+  "BaseTask": {
+    "TaskId": "happy-write-1",
+    "Description": "Write initial data",
+    "Type": "",
+    "Status": "",
+    "Children": null,
+    "Output": {
+      "task_id": "",
+      "status": "",
+      "message": "",
+      "error": "",
+      "resultData": ""
+    }
+  },
+  "Parameters": {
+    "FilePath": "/path/to/output.txt",
+    "Content": "This is the content to write.\nSecond line.",
+    "WorkingDirectory": ""
   }
 }
 ```
 
-**Output JSON (Success Example):**
+**After Execution:**
+
+```json
+{
+  "BaseTask": {
+    "TaskId": "happy-write-1",
+    "Description": "Write initial data",
+    "Type": "",
+    "Status": "SUCCEEDED",
+    "Children": null,
+    "Output": {
+      "task_id": "happy-write-1",
+      "status": "SUCCEEDED",
+      "message": "File writing finished successfully to '/path/to/output.txt' in 0s.",
+      "error": "",
+      "resultData": ""
+    }
+  },
+  "Parameters": {
+    "FilePath": "/path/to/output.txt",
+    "Content": "This is the content to write.\nSecond line.",
+    "WorkingDirectory": ""
+  }
+}
+```
+
+**Result JSON Only:**
 
 ```json
 {
   "task_id": "happy-write-1",
   "status": "SUCCEEDED",
-  "message": "File writing finished successfully to '/var/folders/99/0xjhznh90fldmj20kkw_s_km0000gn/T/cmd_runner_demo_1744697480525532000.txt' in 0s."
+  "message": "File writing finished successfully to '/var/folders/99/0xjhznh90fldmj20kkw_s_km0000gn/T/cmd_runner_demo_1744703180101541000.txt' in 0s."
 }
 ```
+
+**Notes:**
+- The executor will create any necessary parent directories automatically
+- If a file already exists at the specified path, it will be overwritten
+- Empty content is allowed and will create an empty file
 
 ---
 
@@ -478,7 +723,14 @@ The GroupExecutor provides a powerful task composition mechanism with the follow
    - Provides real-time status updates during execution
    - Reports progress after each child task completes
 
-5. **Result Handling**:
+5. **Status Propagation**:
+   - Sends regular status updates as child tasks progress
+   - Reports status changes from child tasks to parent group tasks
+   - Provides detailed progress messages with task counts and completion percentages
+   - Maintains status consistency between tasks and their output results
+   - Enables real-time monitoring of complex task hierarchies
+
+6. **Result Handling**:
    - Concatenates result data from all successfully executed child tasks
    - Collects detailed error information from any failing tasks
    - Provides execution statistics including processed and failed task counts

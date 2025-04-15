@@ -25,19 +25,19 @@ func NewGroupExecutor(registry TaskRegistry) *GroupExecutor {
 // It processes each child task sequentially, tracking their results.
 // The GROUP task fails if any child task fails.
 func (e *GroupExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	var children []Task
+	var children []*Task
 	var taskId string
 	var taskStatus TaskStatus
 	var taskOutput OutputResult
 
-	// Handle both GroupTask and Task types
+	// Handle *GroupTask and *Task types only
 	switch v := cmd.(type) {
-	case GroupTask:
+	case *GroupTask:
 		children = v.Children
 		taskId = v.TaskId
 		taskStatus = v.Status
 		taskOutput = v.Output
-	case Task:
+	case *Task:
 		if v.Type != TaskGroup {
 			return nil, fmt.Errorf("invalid task type: expected TaskGroup, got %s", v.Type)
 		}
@@ -46,7 +46,7 @@ func (e *GroupExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResu
 		taskStatus = v.Status
 		taskOutput = v.Output
 	default:
-		return nil, fmt.Errorf("invalid command type: expected GroupTask or Task, got %T", cmd)
+		return nil, fmt.Errorf("invalid command type: expected *GroupTask or *Task, got %T", cmd)
 	}
 
 	// If the task is already in a terminal state, return it as is
@@ -66,7 +66,7 @@ func (e *GroupExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResu
 }
 
 // executeGroupTask handles the execution of all child tasks in a separate goroutine.
-func (e *GroupExecutor) executeGroupTask(ctx context.Context, taskId string, children []Task, results chan<- OutputResult) {
+func (e *GroupExecutor) executeGroupTask(ctx context.Context, taskId string, children []*Task, results chan<- OutputResult) {
 	defer close(results)
 
 	// Send initial running status
@@ -168,7 +168,7 @@ func (e *GroupExecutor) executeGroupTask(ctx context.Context, taskId string, chi
 }
 
 // processChildTask handles the execution of a single child task and returns its final result.
-func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) OutputResult {
+func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task) OutputResult {
 	// Use the task status as-is if pending, otherwise set to running
 	taskStatus := childTask.Status
 	if taskStatus.IsPending() {
@@ -178,12 +178,16 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 	// Get the appropriate executor for this task type
 	executor, err := e.registry.GetExecutor(childTask.Type)
 	if err != nil {
-		return OutputResult{
+		finalResult := OutputResult{
 			TaskID:  childTask.TaskId,
 			Status:  StatusFailed,
 			Message: "Failed to get executor for child task",
 			Error:   err.Error(),
 		}
+		// Update child task status and output
+		childTask.Status = finalResult.Status
+		childTask.Output = finalResult
+		return finalResult
 	}
 
 	// Convert the generic Task to the appropriate concrete type based on its type
@@ -193,7 +197,7 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 	switch childTask.Type {
 	case TaskFileWrite:
 		if params, ok := childTask.Parameters.(FileWriteParameters); ok {
-			concreteTask = FileWriteTask{
+			concreteTask = &FileWriteTask{
 				BaseTask: BaseTask{
 					TaskId:      childTask.TaskId,
 					Description: childTask.Description,
@@ -207,7 +211,7 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 		}
 	case TaskFileRead:
 		if params, ok := childTask.Parameters.(FileReadParameters); ok {
-			concreteTask = FileReadTask{
+			concreteTask = &FileReadTask{
 				BaseTask: BaseTask{
 					TaskId:      childTask.TaskId,
 					Description: childTask.Description,
@@ -221,7 +225,7 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 		}
 	case TaskBashExec:
 		if params, ok := childTask.Parameters.(BashExecParameters); ok {
-			concreteTask = BashExecTask{
+			concreteTask = &BashExecTask{
 				BaseTask: BaseTask{
 					TaskId:      childTask.TaskId,
 					Description: childTask.Description,
@@ -235,7 +239,7 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 		}
 	case TaskPatchFile:
 		if params, ok := childTask.Parameters.(PatchFileParameters); ok {
-			concreteTask = PatchFileTask{
+			concreteTask = &PatchFileTask{
 				BaseTask: BaseTask{
 					TaskId:      childTask.TaskId,
 					Description: childTask.Description,
@@ -249,7 +253,7 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 		}
 	case TaskListDirectory:
 		if params, ok := childTask.Parameters.(ListDirectoryParameters); ok {
-			concreteTask = ListDirectoryTask{
+			concreteTask = &ListDirectoryTask{
 				BaseTask: BaseTask{
 					TaskId:      childTask.TaskId,
 					Description: childTask.Description,
@@ -263,7 +267,7 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 		}
 	case TaskRequestUserInput:
 		if params, ok := childTask.Parameters.(RequestUserInputParameters); ok {
-			concreteTask = RequestUserInputTask{
+			concreteTask = &RequestUserInputTask{
 				BaseTask: BaseTask{
 					TaskId:      childTask.TaskId,
 					Description: childTask.Description,
@@ -285,23 +289,31 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 
 	// If there was an error preparing the concrete task, return a failure result
 	if executeErr != nil {
-		return OutputResult{
+		finalResult := OutputResult{
 			TaskID:  childTask.TaskId,
 			Status:  StatusFailed,
 			Message: "Failed to create concrete task",
 			Error:   executeErr.Error(),
 		}
+		// Update child task status and output
+		childTask.Status = finalResult.Status
+		childTask.Output = finalResult
+		return finalResult
 	}
 
 	// Execute the child task with the appropriate concrete type
 	childResultsChan, err := executor.Execute(ctx, concreteTask)
 	if err != nil {
-		return OutputResult{
+		finalResult := OutputResult{
 			TaskID:  childTask.TaskId,
 			Status:  StatusFailed,
 			Message: "Failed to execute child task",
 			Error:   err.Error(),
 		}
+		// Update child task status and output
+		childTask.Status = finalResult.Status
+		childTask.Output = finalResult
+		return finalResult
 	}
 
 	// Collect all results from the child task
@@ -320,6 +332,16 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask Task) Ou
 	finalResult := lastResult
 	if resultData.Len() > 0 {
 		finalResult.ResultData = resultData.String()
+	}
+
+	// Update child task status and output based on final result
+	childTask.Status = finalResult.Status
+	childTask.Output = finalResult
+
+	// Update the concrete task's status if it's a Task type
+	if ct, ok := concreteTask.(*Task); ok {
+		ct.Status = finalResult.Status
+		ct.Output = finalResult
 	}
 
 	return finalResult

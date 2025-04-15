@@ -22,9 +22,9 @@ func NewListDirectoryExecutor() *ListDirectoryExecutor {
 // It expects the cmd argument to be of type ListDirectoryCommand.
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	listCmd, ok := cmd.(ListDirectoryTask)
+	listCmd, ok := cmd.(*ListDirectoryTask)
 	if !ok {
-		return nil, fmt.Errorf("invalid command type: expected ListDirectoryCommand, got %T", cmd)
+		return nil, fmt.Errorf("invalid command type: expected *ListDirectoryTask, got %T", cmd)
 	}
 
 	// Check if task is already in a terminal state

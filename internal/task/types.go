@@ -61,7 +61,7 @@ type BaseTask struct {
 	// TaskType indicates the type of task.
 	Type TaskType `json:"type"`
 	// Children is an array of sub-tasks. Only used for TaskGroup type.
-	Children []Task `json:"children,omitempty"`
+	Children []*Task `json:"children,omitempty"`
 	// Output holds the result of the command execution.
 	// This is set by the executor when the command is finished.
 	Output OutputResult `json:"output,omitempty"`

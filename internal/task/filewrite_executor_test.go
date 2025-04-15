@@ -69,7 +69,7 @@ func TestFileWriteExecutor_Execute_Success(t *testing.T) {
 	tempFilePath := filepath.Join(tempDir, "test_write_success.txt")
 	expectedContent := "Hello, world!\nThis is a test."
 
-	cmd := FileWriteTask{
+	cmd := &FileWriteTask{
 		BaseTask: BaseTask{TaskId: "test-write-success-1"},
 		Parameters: FileWriteParameters{
 			FilePath:  tempFilePath,
@@ -107,7 +107,7 @@ func TestFileWriteExecutor_Execute_Overwrite(t *testing.T) {
 	err := os.WriteFile(tempFilePath, []byte(initialContent), 0644)
 	require.NoError(t, err, "Failed to create initial file")
 
-	cmd := FileWriteTask{
+	cmd := &FileWriteTask{
 		BaseTask: BaseTask{TaskId: "test-write-overwrite-1"},
 		Parameters: FileWriteParameters{
 			FilePath:  tempFilePath,
@@ -137,7 +137,7 @@ func TestFileWriteExecutor_Execute_DirectoryNotFound(t *testing.T) {
 	// Path to a file within a non-existent directory
 	nonExistentDirPath := filepath.Join(tempDir, "non_existent_dir", "test_write_fail.txt")
 
-	cmd := FileWriteTask{
+	cmd := &FileWriteTask{
 		BaseTask: BaseTask{TaskId: "test-write-dirfail-1"},
 		Parameters: FileWriteParameters{
 			FilePath:  nonExistentDirPath,
@@ -168,7 +168,7 @@ func TestFileWriteExecutor_Execute_Cancellation(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFilePath := filepath.Join(tempDir, "test_write_cancel.txt")
 
-	cmd := FileWriteTask{
+	cmd := &FileWriteTask{
 		BaseTask: BaseTask{TaskId: "test-write-cancel-1"},
 		Parameters: FileWriteParameters{
 			FilePath: tempFilePath,
@@ -203,7 +203,7 @@ func TestFileWriteExecutor_Execute_Timeout(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFilePath := filepath.Join(tempDir, "test_write_timeout.txt")
 
-	cmd := FileWriteTask{
+	cmd := &FileWriteTask{
 		BaseTask: BaseTask{TaskId: "test-write-timeout-1"},
 		Parameters: FileWriteParameters{
 			FilePath: tempFilePath,
@@ -277,7 +277,7 @@ func TestFileWriteExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := FileWriteTask{
+			cmd := &FileWriteTask{
 				BaseTask: BaseTask{
 					TaskId:      "terminal-filewrite-test",
 					Description: "Terminal filewrite task test",

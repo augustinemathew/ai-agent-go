@@ -14,35 +14,25 @@ func TestRequestUserInputExecutor_Execute(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		cmd           RequestUserInputTask
+		prompt        string
+		taskId        string
+		description   string
 		expectError   bool
 		expectMessage string
 	}{
 		{
-			name: "basic prompt",
-			cmd: RequestUserInputTask{
-				BaseTask: BaseTask{
-					TaskId:      "test-1",
-					Description: "Test prompt",
-				},
-				Parameters: RequestUserInputParameters{
-					Prompt: "Please enter your name:",
-				},
-			},
+			name:          "basic prompt",
+			prompt:        "Please enter your name:",
+			taskId:        "test-1",
+			description:   "Test prompt",
 			expectError:   false,
 			expectMessage: "Please enter your name:",
 		},
 		{
-			name: "empty prompt",
-			cmd: RequestUserInputTask{
-				BaseTask: BaseTask{
-					TaskId:      "test-2",
-					Description: "Empty prompt",
-				},
-				Parameters: RequestUserInputParameters{
-					Prompt: "",
-				},
-			},
+			name:          "empty prompt",
+			prompt:        "",
+			taskId:        "test-2",
+			description:   "Empty prompt",
 			expectError:   false,
 			expectMessage: "",
 		},
@@ -53,7 +43,18 @@ func TestRequestUserInputExecutor_Execute(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			resultsChan, err := executor.Execute(ctx, tt.cmd)
+			// Create the command with the prompt from the test case
+			cmd := &RequestUserInputTask{
+				BaseTask: BaseTask{
+					TaskId:      tt.taskId,
+					Description: tt.description,
+				},
+				Parameters: RequestUserInputParameters{
+					Prompt: tt.prompt,
+				},
+			}
+
+			resultsChan, err := executor.Execute(ctx, cmd)
 			require.NoError(t, err, "Execute should not return an error")
 
 			// Collect results
@@ -63,7 +64,7 @@ func TestRequestUserInputExecutor_Execute(t *testing.T) {
 			}
 
 			// Verify the result
-			assert.Equal(t, tt.cmd.TaskId, finalResult.TaskID)
+			assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 			assert.Equal(t, StatusSucceeded, finalResult.Status)
 			assert.Equal(t, tt.expectMessage, finalResult.Message)
 			assert.Empty(t, finalResult.Error)
@@ -76,7 +77,7 @@ func TestRequestUserInputExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewRequestUserInputExecutor()
 
 	// Try to execute a command of the wrong type
-	resultsChan, err := executor.Execute(context.Background(), FileReadTask{
+	resultsChan, err := executor.Execute(context.Background(), &FileReadTask{
 		BaseTask: BaseTask{
 			TaskId:      "test-invalid",
 			Description: "Invalid command type",
@@ -93,7 +94,7 @@ func TestRequestUserInputExecutor_Execute_InvalidCommandType(t *testing.T) {
 
 func TestRequestUserInputExecutor_Execute_ContextCancellation(t *testing.T) {
 	executor := NewRequestUserInputExecutor()
-	cmd := RequestUserInputTask{
+	cmd := &RequestUserInputTask{
 		BaseTask: BaseTask{
 			TaskId:      "test-cancel",
 			Description: "Test cancellation",
@@ -146,7 +147,7 @@ func TestRequestUserInputExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := RequestUserInputTask{
+			cmd := &RequestUserInputTask{
 				BaseTask: BaseTask{
 					TaskId:      "terminal-userinput-test",
 					Description: "Terminal userinput task test",

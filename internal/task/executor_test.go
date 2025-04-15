@@ -64,7 +64,7 @@ func TestBasicExecutorExecution(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFile := filepath.Join(tempDir, "executor_test_empty_write.txt")
 
-	cmd := task.FileWriteTask{
+	cmd := &task.FileWriteTask{
 		BaseTask: task.BaseTask{TaskId: "exec-test-1"},
 		Parameters: task.FileWriteParameters{
 			FilePath: tempFile,
@@ -75,7 +75,7 @@ func TestBasicExecutorExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	resultsChan, err := executor.Execute(ctx, cmd) // Pass by value ok for FileWrite
+	resultsChan, err := executor.Execute(ctx, cmd) // Pass by pointer for FileWrite
 	if err != nil {
 		t.Fatalf("Execute returned an unexpected error: %v", err)
 	}
@@ -90,5 +90,17 @@ func TestBasicExecutorExecution(t *testing.T) {
 	if finalResult.Status != task.StatusSucceeded {
 		t.Errorf("Expected final status SUCCEEDED, got %s. Msg: %s, Err: %s",
 			finalResult.Status, finalResult.Message, finalResult.Error)
+	}
+
+	// Verify that the task's status was updated
+	if cmd.Status != task.StatusSucceeded {
+		t.Errorf("Task status was not updated: expected %s, got %s",
+			task.StatusSucceeded, cmd.Status)
+	}
+
+	// Verify that the Output field was populated
+	if cmd.Output.TaskID != cmd.TaskId {
+		t.Errorf("Task Output.TaskID was not populated: expected %s, got %s",
+			cmd.TaskId, cmd.Output.TaskID)
 	}
 }

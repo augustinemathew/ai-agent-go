@@ -29,7 +29,6 @@ func main() {
 	// Prepare temp file path and content
 	tempDir := os.TempDir()
 	tempFileName := fmt.Sprintf("cmd_runner_demo_%d.txt", time.Now().UnixNano())
-	relativeFileName := tempFileName // For relative path examples
 	tempFilePath := filepath.Join(tempDir, tempFileName)
 	fileContent := "Hello from FileWrite!\nThis is a test file."
 	fmt.Printf("Using temporary file: %s\n", tempFilePath)
@@ -50,40 +49,40 @@ func main() {
 
 	// Define the commands
 	commandsToRun := []interface{}{
-		task.FileWriteTask{
+		&task.FileWriteTask{
 			BaseTask: task.BaseTask{TaskId: "happy-write-1", Description: "Write demo file"},
 			Parameters: task.FileWriteParameters{
 				FilePath: tempFilePath,
 				Content:  fileContent,
 			},
 		},
-		task.ListDirectoryTask{
+		&task.ListDirectoryTask{
 			BaseTask: task.BaseTask{TaskId: "happy-list-1", Description: "List temp directory"},
 			Parameters: task.ListDirectoryParameters{
 				Path: tempDir, // List the directory containing the temp file
 			},
 		},
-		task.FileReadTask{
+		&task.FileReadTask{
 			BaseTask: task.BaseTask{TaskId: "happy-read-1", Description: "Read demo file"},
 			Parameters: task.FileReadParameters{
 				FilePath: tempFilePath,
 			},
 		},
-		task.BashExecTask{
+		&task.BashExecTask{
 			BaseTask: task.BaseTask{TaskId: "happy-bash-1", Description: "Simple echo"},
 			Parameters: task.BashExecParameters{
 				Command: "echo \"Hello from Bash!\"",
 			},
 		},
 		// Add a multiline Bash script example
-		task.BashExecTask{
+		&task.BashExecTask{
 			BaseTask: task.BaseTask{TaskId: "happy-bash-2", Description: "Multiline Bash script"},
 			Parameters: task.BashExecParameters{
 				Command: "echo \"Starting multiline script...\"\necho \"Current directory: $(pwd)\"\nls -la\necho \"Environment variables:\"\nenv | grep PATH\necho \"Script complete!\"",
 			},
 		},
 		// Add a PATCH_FILE command
-		task.PatchFileTask{
+		&task.PatchFileTask{
 			BaseTask: task.BaseTask{TaskId: "happy-patch-1", Description: "Patch demo file"},
 			Parameters: task.PatchFileParameters{
 				FilePath: tempFilePath,
@@ -92,14 +91,14 @@ func main() {
 			},
 		},
 		// Read the file again to see the patch result
-		task.FileReadTask{
+		&task.FileReadTask{
 			BaseTask: task.BaseTask{TaskId: "happy-read-2", Description: "Read patched demo file"},
 			Parameters: task.FileReadParameters{
 				FilePath: tempFilePath,
 			},
 		},
 		// Demonstrate line number functionality
-		task.FileReadTask{
+		&task.FileReadTask{
 			BaseTask: task.BaseTask{TaskId: "happy-read-3", Description: "Read specific lines from file"},
 			Parameters: task.FileReadParameters{
 				FilePath:  tempFilePath,
@@ -108,7 +107,7 @@ func main() {
 			},
 		},
 		// EXAMPLE 1: Using relative paths with WorkingDirectory
-		task.FileWriteTask{
+		&task.FileWriteTask{
 			BaseTask: task.BaseTask{TaskId: "relative-write-1", Description: "Write file using relative path"},
 			Parameters: task.FileWriteParameters{
 				BaseParameters: task.BaseParameters{
@@ -119,7 +118,7 @@ func main() {
 			},
 		},
 		// Read the file created with relative path
-		task.FileReadTask{
+		&task.FileReadTask{
 			BaseTask: task.BaseTask{TaskId: "relative-read-1", Description: "Read file using relative path"},
 			Parameters: task.FileReadParameters{
 				BaseParameters: task.BaseParameters{
@@ -129,7 +128,7 @@ func main() {
 			},
 		},
 		// EXAMPLE 2: BashExec with WorkingDirectory
-		task.BashExecTask{
+		&task.BashExecTask{
 			BaseTask: task.BaseTask{TaskId: "relative-bash-1", Description: "Run bash in specified working directory"},
 			Parameters: task.BashExecParameters{
 				BaseParameters: task.BaseParameters{
@@ -139,43 +138,43 @@ func main() {
 			},
 		},
 		// EXAMPLE 3: Patch a file using relative path
-		task.FileWriteTask{
+		&task.FileWriteTask{
 			BaseTask: task.BaseTask{TaskId: "relative-base-file", Description: "Create file to be patched"},
 			Parameters: task.FileWriteParameters{
 				BaseParameters: task.BaseParameters{
 					WorkingDirectory: tempDir,
 				},
-				FilePath: relativeFileName,
+				FilePath: tempFileName,
 				Content:  "Original content in relative file.\nThis line will stay the same.",
 			},
 		},
-		task.PatchFileTask{
+		&task.PatchFileTask{
 			BaseTask: task.BaseTask{TaskId: "relative-patch-1", Description: "Patch file using relative path"},
 			Parameters: task.PatchFileParameters{
 				BaseParameters: task.BaseParameters{
 					WorkingDirectory: tempDir,
 				},
-				FilePath: relativeFileName, // Relative to WorkingDirectory
+				FilePath: tempFileName, // Relative to WorkingDirectory
 				Patch:    "--- a/file.txt\n+++ b/file.txt\n@@ -1,2 +1,2 @@\n-Original content in relative file.\n+Modified content in relative file.\n This line will stay the same.",
 			},
 		},
 		// Read the patched file
-		task.FileReadTask{
+		&task.FileReadTask{
 			BaseTask: task.BaseTask{TaskId: "relative-read-patched", Description: "Read patched file with relative path"},
 			Parameters: task.FileReadParameters{
 				BaseParameters: task.BaseParameters{
 					WorkingDirectory: tempDir,
 				},
-				FilePath: relativeFileName,
+				FilePath: tempFileName,
 			},
 		},
 		// Add a GROUP task example
-		task.Task{
+		&task.Task{
 			BaseTask: task.BaseTask{
 				TaskId:      "happy-group-1",
 				Description: "Group task example with nested tasks",
 				Type:        task.TaskGroup,
-				Children: []task.Task{
+				Children: []*task.Task{
 					{
 						BaseTask: task.BaseTask{
 							TaskId:      "group-child-1",
@@ -192,7 +191,7 @@ func main() {
 							TaskId:      "group-nested",
 							Description: "Nested group task",
 							Type:        task.TaskGroup,
-							Children: []task.Task{
+							Children: []*task.Task{
 								{
 									BaseTask: task.BaseTask{
 										TaskId:      "nested-child-1",
@@ -241,9 +240,11 @@ func main() {
 
 		// Use type assertion to get CommandID and determine CommandType
 		switch cmd := cmdGeneric.(type) {
-		case task.FileWriteTask:
+		case *task.FileWriteTask:
 			cmdType = task.TaskFileWrite
 			cmdID = cmd.TaskId
+			// Print the task before execution
+			printTaskAsJSON("BEFORE EXECUTION", cmdGeneric)
 			workingDir := cmd.Parameters.WorkingDirectory
 			if workingDir != "" {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, WorkingDir: %s, Path: %s\n",
@@ -252,9 +253,11 @@ func main() {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, Path: %s\n",
 					cmdType, cmdID, cmd.Description, cmd.Parameters.FilePath)
 			}
-		case task.ListDirectoryTask:
+		case *task.ListDirectoryTask:
 			cmdType = task.TaskListDirectory
 			cmdID = cmd.TaskId
+			// Print the task before execution
+			printTaskAsJSON("BEFORE EXECUTION", cmdGeneric)
 			workingDir := cmd.Parameters.WorkingDirectory
 			if workingDir != "" {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, WorkingDir: %s, Path: %s\n",
@@ -263,9 +266,11 @@ func main() {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, Path: %s\n",
 					cmdType, cmdID, cmd.Description, cmd.Parameters.Path)
 			}
-		case task.FileReadTask:
+		case *task.FileReadTask:
 			cmdType = task.TaskFileRead
 			cmdID = cmd.TaskId
+			// Print the task before execution
+			printTaskAsJSON("BEFORE EXECUTION", cmdGeneric)
 			workingDir := cmd.Parameters.WorkingDirectory
 			if workingDir != "" {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, WorkingDir: %s, Path: %s\n",
@@ -274,9 +279,11 @@ func main() {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, Path: %s\n",
 					cmdType, cmdID, cmd.Description, cmd.Parameters.FilePath)
 			}
-		case task.BashExecTask:
+		case *task.BashExecTask:
 			cmdType = task.TaskBashExec
 			cmdID = cmd.TaskId
+			// Print the task before execution
+			printTaskAsJSON("BEFORE EXECUTION", cmdGeneric)
 			workingDir := cmd.Parameters.WorkingDirectory
 			if workingDir != "" {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, WorkingDir: %s, Command: %s\n",
@@ -285,9 +292,11 @@ func main() {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, Command: %s\n",
 					cmdType, cmdID, cmd.Description, cmd.Parameters.Command)
 			}
-		case task.PatchFileTask:
+		case *task.PatchFileTask:
 			cmdType = task.TaskPatchFile
 			cmdID = cmd.TaskId
+			// Print the task before execution
+			printTaskAsJSON("BEFORE EXECUTION", cmdGeneric)
 			workingDir := cmd.Parameters.WorkingDirectory
 			if workingDir != "" {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, WorkingDir: %s, Path: %s\n",
@@ -296,14 +305,25 @@ func main() {
 				fmt.Printf("Type: %s, ID: %s, Desc: %s, Path: %s\n",
 					cmdType, cmdID, cmd.Description, cmd.Parameters.FilePath)
 			}
-		case task.Task:
+		case *task.Task:
 			cmdType = cmd.Type
 			cmdID = cmd.TaskId
+			// Print the task before execution
+			printTaskAsJSON("BEFORE EXECUTION", cmdGeneric)
 			if cmd.Type == task.TaskGroup {
-				fmt.Printf("Type: %s, ID: %s, Desc: %s, Children: %d\n", cmdType, cmdID, cmd.Description, len(cmd.Children))
+				fmt.Printf("Type: %s, ID: %s, Desc: %s, Children: %d\n",
+					cmdType, cmdID, cmd.Description, len(cmd.Children))
 			} else {
-				fmt.Printf("Type: %s, ID: %s, Desc: %s\n", cmdType, cmdID, cmd.Description)
+				fmt.Printf("Type: %s, ID: %s, Desc: %s\n",
+					cmdType, cmdID, cmd.Description)
 			}
+		case *task.GroupTask:
+			cmdType = task.TaskGroup
+			cmdID = cmd.TaskId
+			// Print the task before execution
+			printTaskAsJSON("BEFORE EXECUTION", cmdGeneric)
+			fmt.Printf("Type: %s, ID: %s, Desc: %s, Children: %d\n",
+				cmdType, cmdID, cmd.Description, len(cmd.Children))
 		default:
 			log.Printf("Unknown command type in sequence: %T", cmdGeneric)
 			continue
@@ -328,6 +348,24 @@ func main() {
 		fmt.Printf("Collecting results for %s...\n", cmdID)
 		finalResult := task.CombineOutputResults(execCtx, resultsChan)
 
+		// At minimum, update the task status based on the final result
+		switch cmd := cmdGeneric.(type) {
+		case *task.FileWriteTask:
+			cmd.Status = finalResult.Status
+		case *task.ListDirectoryTask:
+			cmd.Status = finalResult.Status
+		case *task.FileReadTask:
+			cmd.Status = finalResult.Status
+		case *task.BashExecTask:
+			cmd.Status = finalResult.Status
+		case *task.PatchFileTask:
+			cmd.Status = finalResult.Status
+		case *task.Task:
+			cmd.Status = finalResult.Status
+		case *task.GroupTask:
+			cmd.Status = finalResult.Status
+		}
+
 		// Process and print the single final JSON result
 		fmt.Println("Final Result (JSON):")
 		jsonResult, err := json.MarshalIndent(finalResult, "", "  ") // Pretty print JSON
@@ -340,8 +378,23 @@ func main() {
 			fmt.Println(string(jsonResult))
 		}
 
+		// Print the task after execution to show mutations
+		fmt.Println("TASK AFTER EXECUTION:")
+		printTaskAsJSON("AFTER EXECUTION", cmdGeneric)
+
 		fmt.Printf("--- Finished Command %s (Final Status: %s) ---\n", cmdID, finalResult.Status)
 	}
 
 	fmt.Println("\nCommand runner happy path demo complete.")
+}
+
+// printTaskAsJSON prints a task object as formatted JSON
+func printTaskAsJSON(label string, task interface{}) {
+	fmt.Printf("%s Task JSON:\n", label)
+	jsonTask, err := json.MarshalIndent(task, "", "  ")
+	if err != nil {
+		fmt.Printf("Error marshaling task to JSON: %v\n", err)
+		return
+	}
+	fmt.Println(string(jsonTask))
 }

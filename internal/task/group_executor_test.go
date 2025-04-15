@@ -3,6 +3,7 @@ package task_test
 import (
 	"ai-agent-v3/internal/task"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,20 +20,24 @@ func TestGroupExecutor_Execute_Success(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// First child task
-	child1 := task.Task{
+	paramFileWrite1 := task.FileWriteParameters{
+		FilePath: tempDir + "/child1.txt",
+		Content:  "Content from child 1",
+	}
+	t.Logf("Parameters type: %T", paramFileWrite1)
+
+	child1 := &task.Task{
 		BaseTask: task.BaseTask{
 			TaskId:      "child-1",
 			Description: "First child task",
 			Type:        task.TaskFileWrite,
 		},
-		Parameters: task.FileWriteParameters{
-			FilePath: tempDir + "/child1.txt",
-			Content:  "Content from child 1",
-		},
+		Parameters: paramFileWrite1,
 	}
+	t.Logf("Child1 parameters type: %T", child1.Parameters)
 
 	// Second child task
-	child2 := task.Task{
+	child2 := &task.Task{
 		BaseTask: task.BaseTask{
 			TaskId:      "child-2",
 			Description: "Second child task",
@@ -45,12 +50,12 @@ func TestGroupExecutor_Execute_Success(t *testing.T) {
 	}
 
 	// Create the group task
-	groupTask := task.GroupTask{
+	groupTask := &task.GroupTask{
 		BaseTask: task.BaseTask{
 			TaskId:      "group-1",
 			Description: "Group with two children",
 			Type:        task.TaskGroup,
-			Children:    []task.Task{child1, child2},
+			Children:    []*task.Task{child1, child2},
 		},
 	}
 
@@ -128,12 +133,12 @@ func TestGroupExecutor_Execute_PartialFailure(t *testing.T) {
 	}
 
 	// Create the group task
-	groupTask := task.GroupTask{
+	groupTask := &task.GroupTask{
 		BaseTask: task.BaseTask{
 			TaskId:      "group-partial-fail",
 			Description: "Group with mixed success/failure",
 			Type:        task.TaskGroup,
-			Children:    []task.Task{child1, child2},
+			Children:    []*task.Task{&child1, &child2},
 		},
 	}
 
@@ -202,7 +207,7 @@ func TestGroupExecutor_Execute_NestedGroups(t *testing.T) {
 			TaskId:      "middle-group",
 			Description: "Middle group task",
 			Type:        task.TaskGroup,
-			Children:    []task.Task{innerChild},
+			Children:    []*task.Task{&innerChild},
 		},
 	}
 
@@ -220,12 +225,12 @@ func TestGroupExecutor_Execute_NestedGroups(t *testing.T) {
 	}
 
 	// Outer group containing middle group and middle sibling
-	outerGroup := task.GroupTask{
+	outerGroup := &task.GroupTask{
 		BaseTask: task.BaseTask{
 			TaskId:      "outer-group",
 			Description: "Outer group task",
 			Type:        task.TaskGroup,
-			Children:    []task.Task{middleGroup, middleSibling},
+			Children:    []*task.Task{&middleGroup, &middleSibling},
 		},
 	}
 
@@ -294,7 +299,7 @@ func TestGroupExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 			}
 
 			// Create a task that's already in a terminal state
-			groupTask := task.GroupTask{
+			groupTask := &task.GroupTask{
 				BaseTask: task.BaseTask{
 					TaskId:      "terminal-group-test",
 					Description: "Terminal group task test",
@@ -305,7 +310,7 @@ func TestGroupExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 						Status:  tc.status,
 						Message: "Pre-existing terminal state",
 					},
-					Children: []task.Task{childTask},
+					Children: []*task.Task{&childTask},
 				},
 			}
 
@@ -340,7 +345,7 @@ func verifyFileContent(t *testing.T, filePath, expectedContent string) {
 	t.Helper()
 
 	// Create a file read task to check the content
-	readTask := task.FileReadTask{
+	readTask := &task.FileReadTask{
 		BaseTask: task.BaseTask{
 			TaskId: "read-verify",
 			Type:   task.TaskFileRead,
@@ -387,4 +392,86 @@ func verifyFileContent(t *testing.T, filePath, expectedContent string) {
 	if content != expectedContent {
 		t.Errorf("File %s has incorrect content. Expected: %q, Got: %q", filePath, expectedContent, content)
 	}
+}
+
+// TestGroupExecutor_ChildTaskStatusUpdates verifies that child task statuses are correctly updated
+func TestGroupExecutor_ChildTaskStatusUpdates(t *testing.T) {
+	// Create a registry
+	registry := task.NewMapRegistry()
+
+	// Create a group task with two file write children
+	tempDir := t.TempDir()
+
+	// First child task
+	child1 := &task.Task{
+		BaseTask: task.BaseTask{
+			TaskId:      "child-1",
+			Description: "First child task",
+			Type:        task.TaskFileWrite,
+		},
+		Parameters: task.FileWriteParameters{
+			FilePath: filepath.Join(tempDir, "child1.txt"),
+			Content:  "Content from child 1",
+		},
+	}
+
+	// Second child task
+	child2 := &task.Task{
+		BaseTask: task.BaseTask{
+			TaskId:      "child-2",
+			Description: "Second child task",
+			Type:        task.TaskFileWrite,
+		},
+		Parameters: task.FileWriteParameters{
+			FilePath: filepath.Join(tempDir, "child2.txt"),
+			Content:  "Content from child 2",
+		},
+	}
+
+	// Create the group task
+	groupTask := &task.GroupTask{
+		BaseTask: task.BaseTask{
+			TaskId:      "group-1",
+			Description: "Group with two children",
+			Type:        task.TaskGroup,
+			Children:    []*task.Task{child1, child2},
+		},
+	}
+
+	// Execute the group task
+	executor, err := registry.GetExecutor(task.TaskGroup)
+	if err != nil {
+		t.Fatalf("Failed to get GroupExecutor: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resultsChan, err := executor.Execute(ctx, groupTask)
+	if err != nil {
+		t.Fatalf("Failed to execute group task: %v", err)
+	}
+
+	// Wait for all results
+	var lastResult task.OutputResult
+	for result := range resultsChan {
+		lastResult = result
+	}
+
+	// Verify group task succeeded
+	assert.Equal(t, task.StatusSucceeded, lastResult.Status, "Group task should have succeeded")
+
+	// Verify child1 status was updated
+	assert.Equal(t, task.StatusSucceeded, child1.Status, "Child1 status should be updated to SUCCEEDED")
+	assert.NotEmpty(t, child1.Output, "Child1 output should not be empty")
+	assert.Equal(t, child1.TaskId, child1.Output.TaskID, "Child1 output TaskID should match child1 TaskId")
+
+	// Verify child2 status was updated
+	assert.Equal(t, task.StatusSucceeded, child2.Status, "Child2 status should be updated to SUCCEEDED")
+	assert.NotEmpty(t, child2.Output, "Child2 output should not be empty")
+	assert.Equal(t, child2.TaskId, child2.Output.TaskID, "Child2 output TaskID should match child2 TaskId")
+
+	// Verify the files were created with correct content
+	verifyFileContent(t, filepath.Join(tempDir, "child1.txt"), "Content from child 1")
+	verifyFileContent(t, filepath.Join(tempDir, "child2.txt"), "Content from child 2")
 }
