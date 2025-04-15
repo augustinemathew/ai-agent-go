@@ -252,7 +252,7 @@ func main() {
 		// Execute
 		// Use a background context for now, could be replaced with a request-scoped context
 		execCtx := context.Background()
-		resultsChan, err := executor.Execute(execCtx, cmdGeneric)
+		resultsChan, err := executor.Execute(execCtx, cmd)
 		if err != nil {
 			log.Printf("ERROR: Failed to start execution for %s (%s): %v", cmdType, cmdID, err)
 			continue
@@ -296,9 +296,4 @@ func printTaskAsJSON(label string, taskObj interface{}) {
 		return
 	}
 	fmt.Println(string(jsonTask))
-}
-
-// Assuming jsonString contains your task JSON
-func unmarshalTask(jsonString string) (*task.Task, error) {
-	return task.FromJSON(jsonString)
 }

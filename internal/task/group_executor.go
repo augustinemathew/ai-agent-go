@@ -24,24 +24,20 @@ func NewGroupExecutor(registry TaskRegistry) *GroupExecutor {
 // Execute implements the TaskExecutor interface for GroupTask.
 // It processes each child task sequentially, tracking their results.
 // The GROUP task fails if any child task fails.
-func (e *GroupExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
+func (e *GroupExecutor) Execute(ctx context.Context, v *Task) (<-chan OutputResult, error) {
 	var children []*Task
 	var taskId string
 	var taskStatus TaskStatus
 	var taskOutput OutputResult
 
-	switch v := cmd.(type) {
-	case *Task:
-		if v.Type != TaskGroup {
-			return nil, fmt.Errorf("invalid task type: expected TaskGroup, got %s", v.Type)
-		}
-		children = v.Children
-		taskId = v.TaskId
-		taskStatus = v.Status
-		taskOutput = v.Output
-	default:
-		return nil, fmt.Errorf("invalid command type: expected *Task, got %T", cmd)
+	if v.Type != TaskGroup {
+		return nil, fmt.Errorf("invalid task type: expected TaskGroup, got %s", v.Type)
 	}
+
+	children = v.Children
+	taskId = v.TaskId
+	taskStatus = v.Status
+	taskOutput = v.Output
 
 	// If the task is already in a terminal state, return it as is
 	terminalChan, err := HandleTerminalTask(taskId, taskStatus, taskOutput)
@@ -163,10 +159,9 @@ func (e *GroupExecutor) executeGroupTask(ctx context.Context, taskId string, chi
 
 // processChildTask handles the execution of a single child task and returns its final result.
 func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task) OutputResult {
-	// Use the task status as-is if pending, otherwise set to running
-	taskStatus := childTask.Status
-	if taskStatus.IsPending() {
-		taskStatus = StatusRunning
+	// Set the task status to running if it's pending
+	if childTask.Status.IsPending() {
+		childTask.Status = StatusRunning
 	}
 
 	// Get the appropriate executor for this task type
@@ -184,71 +179,8 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task) O
 		return finalResult
 	}
 
-	// Convert the generic Task to the appropriate concrete type based on its type
-	var concreteTask interface{}
-	var executeErr error
-
-	switch childTask.Type {
-	case TaskFileWrite:
-		if params, ok := childTask.Parameters.(FileWriteParameters); ok {
-			concreteTask = NewFileWriteTask(childTask.TaskId, childTask.Description, params)
-		} else {
-			executeErr = fmt.Errorf("invalid parameters for FileWriteCommand: %T", childTask.Parameters)
-		}
-	case TaskFileRead:
-		if params, ok := childTask.Parameters.(FileReadParameters); ok {
-			concreteTask = NewFileReadTask(childTask.TaskId, childTask.Description, params)
-		} else {
-			executeErr = fmt.Errorf("invalid parameters for FileReadTask: %T", childTask.Parameters)
-		}
-	case TaskBashExec:
-		if params, ok := childTask.Parameters.(BashExecParameters); ok {
-			concreteTask = NewBashExecTask(childTask.TaskId, childTask.Description, params)
-		} else {
-			executeErr = fmt.Errorf("invalid parameters for BashExecTask: %T", childTask.Parameters)
-		}
-	case TaskPatchFile:
-		if params, ok := childTask.Parameters.(PatchFileParameters); ok {
-			concreteTask = NewPatchFileTask(childTask.TaskId, childTask.Description, params)
-		} else {
-			executeErr = fmt.Errorf("invalid parameters for PatchFileCommand: %T", childTask.Parameters)
-		}
-	case TaskListDirectory:
-		if params, ok := childTask.Parameters.(ListDirectoryParameters); ok {
-			concreteTask = NewListDirectoryTask(childTask.TaskId, childTask.Description, params)
-		} else {
-			executeErr = fmt.Errorf("invalid parameters for ListDirectoryCommand: %T", childTask.Parameters)
-		}
-	case TaskRequestUserInput:
-		if params, ok := childTask.Parameters.(RequestUserInputParameters); ok {
-			concreteTask = NewRequestUserInputTask(childTask.TaskId, childTask.Description, params)
-		} else {
-			executeErr = fmt.Errorf("invalid parameters for RequestUserInput: %T", childTask.Parameters)
-		}
-	case TaskGroup:
-		// For groups, create a new Task with the same status
-		newTask := childTask
-		concreteTask = newTask
-	default:
-		executeErr = fmt.Errorf("unsupported task type: %s", childTask.Type)
-	}
-
-	// If there was an error preparing the concrete task, return a failure result
-	if executeErr != nil {
-		finalResult := OutputResult{
-			TaskID:  childTask.TaskId,
-			Status:  StatusFailed,
-			Message: "Failed to create concrete task",
-			Error:   executeErr.Error(),
-		}
-		// Update child task status and output
-		childTask.Status = finalResult.Status
-		childTask.Output = finalResult
-		return finalResult
-	}
-
-	// Execute the child task with the appropriate concrete type
-	childResultsChan, err := executor.Execute(ctx, concreteTask)
+	// Execute the child task directly
+	childResultsChan, err := executor.Execute(ctx, childTask)
 	if err != nil {
 		finalResult := OutputResult{
 			TaskID:  childTask.TaskId,
@@ -283,12 +215,6 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task) O
 	// Update child task status and output based on final result
 	childTask.Status = finalResult.Status
 	childTask.Output = finalResult
-
-	// Update the concrete task's status if it's a Task type
-	if ct, ok := concreteTask.(*Task); ok {
-		ct.Status = finalResult.Status
-		ct.Output = finalResult
-	}
 
 	return finalResult
 }

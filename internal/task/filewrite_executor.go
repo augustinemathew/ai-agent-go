@@ -46,16 +46,9 @@ func NewFileWriteExecutor() *FileWriteExecutor {
 }
 
 // Execute implements the Executor interface for FileWriteCommand.
-func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	var fileWriteCmd *Task
-	switch v := cmd.(type) {
-	case *Task:
-		fileWriteCmd = v
-	default:
-		return nil, fmt.Errorf(errFileWriteInvalidCommandType)
-	}
+func (e *FileWriteExecutor) Execute(ctx context.Context, fileWriteCmd *Task) (<-chan OutputResult, error) {
 	if fileWriteCmd.Type != TaskFileWrite {
-		return nil, fmt.Errorf(errFileWriteInvalidCommandType)
+		return nil, errors.New(errFileWriteInvalidCommandType)
 	}
 
 	// Check if task is already in a terminal state
