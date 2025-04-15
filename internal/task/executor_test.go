@@ -1,7 +1,7 @@
-package command_test
+package task_test
 
 import (
-	"ai-agent-v3/internal/command"
+	"ai-agent-v3/internal/task"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -13,18 +13,18 @@ import (
 // registered and retrieved via the registry.
 func TestExecutorRegistrationAndRetrieval(t *testing.T) {
 	// Create registry - executors are now registered automatically.
-	registry := command.NewMapRegistry()
+	registry := task.NewMapRegistry()
 
 	testCases := []struct {
-		name         command.CommandType
+		name         task.TaskType
 		expectedType string // Store expected type as string for easier comparison
 	}{
-		{command.CmdBashExec, "*command.BashExecExecutor"},
-		{command.CmdFileRead, "*command.FileReadExecutor"},
-		{command.CmdFileWrite, "*command.FileWriteExecutor"},
-		{command.CmdPatchFile, "*command.PatchFileExecutor"},
-		{command.CmdListDirectory, "*command.ListDirectoryExecutor"},
-		{command.CmdRequestUserInput, "*command.RequestUserInputExecutor"},
+		{task.TaskBashExec, "*task.BashExecExecutor"},
+		{task.TaskFileRead, "*task.FileReadExecutor"},
+		{task.TaskFileWrite, "*task.FileWriteExecutor"},
+		{task.TaskPatchFile, "*task.PatchFileExecutor"},
+		{task.TaskListDirectory, "*task.ListDirectoryExecutor"},
+		{task.TaskRequestUserInput, "*task.RequestUserInputExecutor"},
 	}
 
 	for _, tc := range testCases {
@@ -52,9 +52,9 @@ func TestExecutorRegistrationAndRetrieval(t *testing.T) {
 // It does NOT thoroughly test the executor logic.
 func TestBasicExecutorExecution(t *testing.T) {
 	// Create registry - executors are now registered automatically.
-	registry := command.NewMapRegistry()
+	registry := task.NewMapRegistry()
 
-	executor, err := registry.GetExecutor(command.CmdFileWrite)
+	executor, err := registry.GetExecutor(task.TaskFileWrite)
 	if err != nil {
 		t.Fatalf("Failed to get FileWriteExecutor: %v", err)
 	}
@@ -64,10 +64,12 @@ func TestBasicExecutorExecution(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFile := filepath.Join(tempDir, "executor_test_empty_write.txt")
 
-	cmd := command.FileWriteCommand{
-		BaseCommand: command.BaseCommand{CommandID: "exec-test-1"},
-		FilePath:    tempFile,
-		Content:     "", // Empty content
+	cmd := task.FileWriteTask{
+		BaseTask: task.BaseTask{TaskId: "exec-test-1"},
+		Parameters: task.FileWriteParameters{
+			FilePath: tempFile,
+			Content:  "", // Empty content
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -82,13 +84,11 @@ func TestBasicExecutorExecution(t *testing.T) {
 	}
 
 	// Consume the result to ensure the goroutine finishes
-	finalResult := command.CombineOutputResults(ctx, resultsChan)
+	finalResult := task.CombineOutputResults(ctx, resultsChan)
 
 	// Basic check on the final status
-	if finalResult.Status != command.StatusSucceeded {
+	if finalResult.Status != task.StatusSucceeded {
 		t.Errorf("Expected final status SUCCEEDED, got %s. Msg: %s, Err: %s",
 			finalResult.Status, finalResult.Message, finalResult.Error)
 	}
 }
-
-// TODO: Add tests for individual executors and the executor interface.

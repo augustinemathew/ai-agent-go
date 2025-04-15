@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestMapRegistry_NewMapRegistry(t *testing.T) {
 	}
 
 	// After refactoring, the registry should be initialized with standard executors.
-	expectedCount := 6 // Bash, FileRead, FileWrite, PatchFile, ListDir, RequestUserInput
+	expectedCount := 7 // Bash, FileRead, FileWrite, PatchFile, ListDir, RequestUserInput, Group
 	if len(r.executors) != expectedCount {
 		t.Errorf("Expected initial executors map to contain %d standard executors, got size %d", expectedCount, len(r.executors))
 	}
@@ -37,7 +37,7 @@ func TestMapRegistry_NewMapRegistry(t *testing.T) {
 func TestMapRegistry_RegisterAndGetExecutor(t *testing.T) {
 	r := NewMapRegistry() // Use the standard constructor which now pre-populates
 	mockExec := &MockExecutor{}
-	testCmdType := CommandType("TEST_CMD_OVERWRITE") // Use a unique name to avoid collision
+	testCmdType := TaskType("TEST_CMD_OVERWRITE") // Use a unique name to avoid collision
 
 	// Check initial state (optional, depends on test intent)
 	initialCount := len(r.executors)
@@ -93,8 +93,8 @@ func TestMapRegistry_RegisterAndGetExecutor(t *testing.T) {
 }
 
 func TestMapRegistry_GetExecutor_Unregistered(t *testing.T) {
-	r := NewMapRegistry()                                    // Use standard constructor
-	unknownCmdType := CommandType("______UNKNOWN_CMD______") // Make it unlikely to collide
+	r := NewMapRegistry()                                 // Use standard constructor
+	unknownCmdType := TaskType("______UNKNOWN_CMD______") // Make it unlikely to collide
 
 	_, err := r.GetExecutor(unknownCmdType)
 	if err == nil {

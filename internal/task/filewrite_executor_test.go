@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -69,10 +69,13 @@ func TestFileWriteExecutor_Execute_Success(t *testing.T) {
 	tempFilePath := filepath.Join(tempDir, "test_write_success.txt")
 	expectedContent := "Hello, world!\nThis is a test."
 
-	cmd := FileWriteCommand{
-		BaseCommand: BaseCommand{CommandID: "test-write-success-1"},
-		FilePath:    tempFilePath,
-		Content:     expectedContent,
+	cmd := FileWriteTask{
+		BaseTask: BaseTask{TaskId: "test-write-success-1"},
+		Parameters: FileWriteParameters{
+			FilePath:  tempFilePath,
+			Content:   expectedContent,
+			Overwrite: false,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -81,8 +84,7 @@ func TestFileWriteExecutor_Execute_Success(t *testing.T) {
 	finalResult, received := readFinalResult(t, resultsChan, 5*time.Second)
 	require.True(t, received, "Did not receive final result")
 
-	assert.Equal(t, cmd.CommandID, finalResult.CommandID)
-	assert.Equal(t, CmdFileWrite, finalResult.CommandType)
+	assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 	assert.Equal(t, StatusSucceeded, finalResult.Status)
 	assert.Empty(t, finalResult.Error, "Expected no error message")
 	assert.Contains(t, finalResult.Message, "File writing finished successfully")
@@ -105,10 +107,13 @@ func TestFileWriteExecutor_Execute_Overwrite(t *testing.T) {
 	err := os.WriteFile(tempFilePath, []byte(initialContent), 0644)
 	require.NoError(t, err, "Failed to create initial file")
 
-	cmd := FileWriteCommand{
-		BaseCommand: BaseCommand{CommandID: "test-write-overwrite-1"},
-		FilePath:    tempFilePath,
-		Content:     newContent,
+	cmd := FileWriteTask{
+		BaseTask: BaseTask{TaskId: "test-write-overwrite-1"},
+		Parameters: FileWriteParameters{
+			FilePath:  tempFilePath,
+			Content:   newContent,
+			Overwrite: true,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -132,10 +137,13 @@ func TestFileWriteExecutor_Execute_DirectoryNotFound(t *testing.T) {
 	// Path to a file within a non-existent directory
 	nonExistentDirPath := filepath.Join(tempDir, "non_existent_dir", "test_write_fail.txt")
 
-	cmd := FileWriteCommand{
-		BaseCommand: BaseCommand{CommandID: "test-write-dirfail-1"},
-		FilePath:    nonExistentDirPath,
-		Content:     "This should not be written.",
+	cmd := FileWriteTask{
+		BaseTask: BaseTask{TaskId: "test-write-dirfail-1"},
+		Parameters: FileWriteParameters{
+			FilePath:  nonExistentDirPath,
+			Content:   "This should not be written.",
+			Overwrite: false,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -160,10 +168,12 @@ func TestFileWriteExecutor_Execute_Cancellation(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFilePath := filepath.Join(tempDir, "test_write_cancel.txt")
 
-	cmd := FileWriteCommand{
-		BaseCommand: BaseCommand{CommandID: "test-write-cancel-1"},
-		FilePath:    tempFilePath,
-		Content:     "This might be partially written if cancel is slow, but likely not written.",
+	cmd := FileWriteTask{
+		BaseTask: BaseTask{TaskId: "test-write-cancel-1"},
+		Parameters: FileWriteParameters{
+			FilePath: tempFilePath,
+			Content:  "This might be partially written if cancel is slow, but likely not written.",
+		},
 	}
 
 	// Create a cancellable context
@@ -193,10 +203,12 @@ func TestFileWriteExecutor_Execute_Timeout(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFilePath := filepath.Join(tempDir, "test_write_timeout.txt")
 
-	cmd := FileWriteCommand{
-		BaseCommand: BaseCommand{CommandID: "test-write-timeout-1"},
-		FilePath:    tempFilePath,
-		Content:     "This content should not be written due to timeout.",
+	cmd := FileWriteTask{
+		BaseTask: BaseTask{TaskId: "test-write-timeout-1"},
+		Parameters: FileWriteParameters{
+			FilePath: tempFilePath,
+			Content:  "This content should not be written due to timeout.",
+		},
 	}
 
 	// Use a very short timeout
@@ -227,9 +239,11 @@ func TestFileWriteExecutor_Execute_Timeout(t *testing.T) {
 func TestFileWriteExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewFileWriteExecutor()
 	// Create a command of the wrong type
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "invalid-write-type-1"},
-		FilePath:    "some/path",
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "invalid-write-type-1"},
+		Parameters: FileReadParameters{
+			FilePath: "some/path",
+		},
 	}
 
 	// Pass context, although it won't be used here as error is immediate
@@ -238,5 +252,70 @@ func TestFileWriteExecutor_Execute_InvalidCommandType(t *testing.T) {
 	// Expect an immediate error, not a result from the channel
 	require.Error(t, err, "Expected an error for invalid command type")
 	assert.Nil(t, resultsChan, "Expected nil channel on immediate error")
-	assert.Contains(t, err.Error(), "invalid command type: expected FileWriteCommand, got command.FileReadCommand")
+}
+
+func TestFileWriteExecutor_Execute_TerminalTaskHandling(t *testing.T) {
+	executor := NewFileWriteExecutor()
+
+	testCases := []struct {
+		name           string
+		status         TaskStatus
+		expectedStatus TaskStatus
+	}{
+		{
+			name:           "Already succeeded task",
+			status:         StatusSucceeded,
+			expectedStatus: StatusSucceeded,
+		},
+		{
+			name:           "Already failed task",
+			status:         StatusFailed,
+			expectedStatus: StatusFailed,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a task that's already in a terminal state
+			cmd := FileWriteTask{
+				BaseTask: BaseTask{
+					TaskId:      "terminal-filewrite-test",
+					Description: "Terminal filewrite task test",
+					Status:      tc.status,
+					Output: OutputResult{
+						TaskID:  "terminal-filewrite-test",
+						Status:  tc.status,
+						Message: "Pre-existing terminal state",
+					},
+				},
+				Parameters: FileWriteParameters{
+					FilePath: "nonexistent/directory/file.txt", // Should not try to write this
+					Content:  "This should not be written",
+				},
+			}
+
+			resultsChan, err := executor.Execute(context.Background(), cmd)
+			require.NoError(t, err, "Execute should not return an error for terminal tasks")
+			require.NotNil(t, resultsChan, "Result channel should not be nil")
+
+			// Get the result from the channel
+			var finalResult OutputResult
+			select {
+			case result, ok := <-resultsChan:
+				require.True(t, ok, "Channel closed without receiving a result")
+				finalResult = result
+			case <-time.After(1 * time.Second):
+				t.Fatal("Timed out waiting for result from terminal task")
+			}
+
+			// Check the result
+			assert.Equal(t, cmd.TaskId, finalResult.TaskID, "TaskID should match")
+			assert.Equal(t, tc.expectedStatus, finalResult.Status, "Status should remain unchanged")
+			assert.Equal(t, "Pre-existing terminal state", finalResult.Message, "Message should be preserved")
+
+			// Ensure the channel is closed
+			_, ok := <-resultsChan
+			assert.False(t, ok, "Channel should be closed after sending the result")
+		})
+	}
 }

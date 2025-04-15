@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -45,12 +45,11 @@ func CombineOutputResults(ctx context.Context, resultsChan <-chan OutputResult) 
 		case <-ctx.Done():
 			// Context cancelled
 			return OutputResult{
-				CommandID:   lastMsg.CommandID,   // Use ID from last message seen, if any
-				CommandType: lastMsg.CommandType, // Use Type from last message seen, if any
-				Status:      StatusFailed,
-				Message:     fmt.Sprintf("Result collection cancelled for command %s.", lastMsg.CommandID),
-				Error:       ctx.Err().Error(),
-				ResultData:  concatenatedData.String(), // Include data collected so far
+				TaskID:     lastMsg.TaskID, // Use ID from last message seen, if any
+				Status:     StatusFailed,
+				Message:    fmt.Sprintf("Result collection cancelled for command %s.", lastMsg.TaskID),
+				Error:      ctx.Err().Error(),
+				ResultData: concatenatedData.String(), // Include data collected so far
 			}
 		}
 	}

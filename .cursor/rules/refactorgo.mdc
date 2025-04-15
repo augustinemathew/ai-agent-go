@@ -1,0 +1,245 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Effective Go Refactoring Workflow & Top Tasks
+
+Refactoring Go code aims to improve its internal structure, readability, and maintainability without changing its external behavior. A disciplined, iterative workflow is crucial for doing this safely and effectively.
+
+
+**Benefits:** Safety, Confidence, Easier Debugging, Momentum, Reviewability.
+
+---
+
+## Top 6 Common Go Refactoring Tasks (with Examples)
+
+Here are some frequent refactoring actions you might perform using the workflow above:
+
+**1. Improve Naming**
+
+Clear, idiomatic names (following Go conventions like `mixedCaps`, public/private visibility) are vital for readability.
+
+* **Before:**
+    ```go
+    // Bad: Vague, uses underscore, doesn't indicate export status clearly
+    func proc_data(d map[string]string) string {
+        var temp_val string // Unclear purpose
+        // ...
+        return temp_val
+    }
+    ```
+* **After:**
+    ```go
+    // Good: Clear intent, idiomatic Go naming (exported), descriptive variable
+    func FormatUserName(userData map[string]string) (string, error) {
+        formattedName := // ... logic ...
+        if formattedName == "" {
+             return "", errors.New("formatting failed") // Also improving error handling
+        }
+        return formattedName, nil
+    }
+    ```
+
+**2. Extract Function/Method** DRY principle
+
+Break down long functions or duplicated logic into smaller, reusable, and testable units.
+
+* **Before:**
+    ```go
+    func HandleRequest(w http.ResponseWriter, r *http.Request) {
+        // ... 10 lines of validation logic ...
+        if !valid {
+             http.Error(w, "Invalid input", http.StatusBadRequest)
+             return
+        }
+
+        // ... 15 lines of processing logic ...
+
+        // ... 5 lines of response formatting ...
+        fmt.Fprintln(w, response)
+    }
+    ```
+* **After:**
+    ```go
+    func validateRequest(r *http.Request) error {
+        // ... 10 lines of validation logic ...
+        if !valid {
+            return errors.New("invalid input")
+        }
+        return nil
+    }
+
+    func processData(data InputData) (OutputData, error) {
+        // ... 15 lines of processing logic ...
+    }
+
+    func formatResponse(output OutputData) string {
+         // ... 5 lines of response formatting ...
+    }
+
+    func HandleRequest(w http.ResponseWriter, r *http.Request) {
+        if err := validateRequest(r); err != nil {
+            http.Error(w, err.Error(), http.StatusBadRequest)
+            return
+        }
+        input := parseInput(r) // Assume parsing happens here
+        output, err := processData(input)
+        if err != nil {
+            http.Error(w, "Processing failed", http.StatusInternalServerError)
+            return
+        }
+        response := formatResponse(output)
+        fmt.Fprintln(w, response)
+    }
+    ```
+
+**3. Improve Error Handling**
+
+Make errors more informative by wrapping them with context or using custom error types.
+
+* **Before:**
+    ```go
+    func loadConfig(path string) (*Config, error) {
+        data, err := os.ReadFile(path)
+        if err != nil {
+            return nil, err // Raw error, context lost
+        }
+        // ... parse data ...
+    }
+    ```
+* **After:**
+    ```go
+    import "fmt"
+
+    func loadConfig(path string) (*Config, error) {
+        data, err := os.ReadFile(path)
+        if err != nil {
+            // Wrap error with context using fmt.Errorf and %w
+            return nil, fmt.Errorf("loadConfig: failed to read file %q: %w", path, err)
+        }
+        // ... parse data ...
+        // Consider returning specific parsing errors too
+    }
+    ```
+
+**4. Simplify Conditionals**
+
+Reduce nesting and improve clarity using techniques like guard clauses (early returns).
+
+* **Before:**
+    ```go
+    func checkPermissions(user *User, resource *Resource) bool {
+        if user != nil {
+            if user.IsActive {
+                if resource != nil {
+                    if user.CanAccess(resource.ID) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+    ```
+* **After:**
+    ```go
+    func checkPermissions(user *User, resource *Resource) bool {
+        // Guard clauses for invalid inputs or inactive user
+        if user == nil || !user.IsActive || resource == nil {
+            return false
+        }
+        // Core logic is now clear
+        return user.CanAccess(resource.ID)
+    }
+    ```
+
+**5. Introduce Interfaces**
+
+Decouple components, improve testability, and allow for polymorphism by programming to interfaces rather than concrete types.
+
+* **Before:**
+    ```go
+    // Tightly coupled to a specific database implementation
+    type UserService struct {
+        db *PostgresDB // Concrete type
+    }
+
+    func (s *UserService) GetUser(id int) (*User, error) {
+        return s.db.FindUserByID(id)
+    }
+
+    // Hard to test without a real Postgres DB
+    ```
+* **After:**
+    ```go
+    // Define an interface for what the service needs
+    type UserStore interface {
+        FindUserByID(id int) (*User, error)
+    }
+
+    // Service depends on the interface, not the concrete type
+    type UserService struct {
+        store UserStore // Use the interface
+    }
+
+    func (s *UserService) GetUser(id int) (*User, error) {
+        return s.store.FindUserByID(id) // Call interface method
+    }
+
+    // Now can be tested with a mock UserStore:
+    type MockUserStore struct { /* ... mock implementation ... */ }
+    func (m *MockUserStore) FindUserByID(id int) (*User, error) { /* ... */ }
+    ```
+
+**6. Replace Magic Numbers/Strings**
+
+Replace unnamed literal values with named constants (`const`) for better readability and maintainability.
+
+* **Before:**
+    ```go
+    func calculatePrice(quantity int) float64 {
+        if quantity > 100 { // What does 100 mean?
+            return float64(quantity) * 8.50 // What is 8.50?
+        }
+        return float64(quantity) * 10.00 // What is 10.00?
+    }
+    ```
+* **After:**
+    ```go
+    const (
+        BulkDiscountThreshold = 100   // Meaning is clear
+        BulkPricePerUnit    = 8.50
+        StandardPricePerUnit = 10.00
+    )
+
+    func calculatePrice(quantity int) float64 {
+        if quantity > BulkDiscountThreshold {
+            return float64(quantity) * BulkPricePerUnit
+        }
+        return float64(quantity) * StandardPricePerUnit
+    }
+    ```
+
+** 8. Delete unused code**
+
+# The Core Refactoring Workflow: Small Steps, Constant Verification
+
+This workflow minimizes risk and makes debugging easier by breaking down changes into manageable, verifiable steps.
+
+**The Cycle:**
+
+0.  **Analyze the file carefully** Decide which ones are needed from the examples.
+1.  **Identify ONE Small Target:** Pinpoint a single, specific improvement (e.g., rename a variable, extract 3-5 lines to a helper function, simplify one `if` block, replace a magic number with a `const`).
+2.  **Ensure Test Coverage (Pre-Change):** Verify that the specific code you are about to change is covered by tests (`testing` package). If not, **write the necessary test(s) first**. Run `go test ./...` to ensure all current tests pass.
+3.  **Make the Small Change:** Implement *only* the single, targeted improvement.
+4.  **Compile:** Check that the code still compiles (`go build ./...`).
+5.  **Run Tests & Verify:** Run tests again (`go test ./...`).
+    * **Pass:** Review the change mentally. Does it look correct?
+    * **Fail:** Fix forward if easy, otherwise **revert** the change and rethink.
+6.  **(Recommended) Commit:** Commit the small, verified change with a clear message (e.g., `git commit -m "refactor: extract validation logic into isValidInput helper"`).
+7.  **Repeat:** Go back to Step 1 for the next small target.
+
+Write this down into refactoring_<file_name>.md with a set of parent and child tasks [ ]. Each task should be a cycle change->build->test mentioned above. You can have many of these tasks. These tasks then need to be checked off after each change. Consult refactoring_<file_name>.md. Each task must be small or split into subtasks
+
+

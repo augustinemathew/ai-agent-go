@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -34,9 +34,11 @@ func TestListDirectoryExecutor_Execute_Success(t *testing.T) {
 	absTempDir, err := filepath.Abs(tempDir)
 	require.NoError(t, err)
 
-	cmd := ListDirectoryCommand{
-		BaseCommand: BaseCommand{CommandID: "test-list-success-1"},
-		Path:        tempDir,
+	cmd := ListDirectoryTask{
+		BaseTask: BaseTask{TaskId: "test-list-success-1"},
+		Parameters: ListDirectoryParameters{
+			Path: tempDir,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -45,8 +47,7 @@ func TestListDirectoryExecutor_Execute_Success(t *testing.T) {
 	finalResult, received := readFinalResult(t, resultsChan, 5*time.Second)
 	require.True(t, received, "Did not receive final result")
 
-	assert.Equal(t, cmd.CommandID, finalResult.CommandID)
-	assert.Equal(t, CmdListDirectory, finalResult.CommandType)
+	assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 	assert.Equal(t, StatusSucceeded, finalResult.Status)
 	assert.Empty(t, finalResult.Error, "Expected no error message")
 	assert.Contains(t, finalResult.Message, "Successfully listed directory")
@@ -68,9 +69,11 @@ func TestListDirectoryExecutor_Execute_EmptyDir(t *testing.T) {
 	absTempDir, err := filepath.Abs(tempDir)
 	require.NoError(t, err)
 
-	cmd := ListDirectoryCommand{
-		BaseCommand: BaseCommand{CommandID: "test-list-empty-1"},
-		Path:        tempDir,
+	cmd := ListDirectoryTask{
+		BaseTask: BaseTask{TaskId: "test-list-empty-1"},
+		Parameters: ListDirectoryParameters{
+			Path: tempDir,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -94,9 +97,11 @@ func TestListDirectoryExecutor_Execute_NotFound(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	nonExistentPath := filepath.Join(t.TempDir(), "does_not_exist")
 
-	cmd := ListDirectoryCommand{
-		BaseCommand: BaseCommand{CommandID: "test-list-notfound-1"},
-		Path:        nonExistentPath,
+	cmd := ListDirectoryTask{
+		BaseTask: BaseTask{TaskId: "test-list-notfound-1"},
+		Parameters: ListDirectoryParameters{
+			Path: nonExistentPath,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -122,9 +127,11 @@ func TestListDirectoryExecutor_Execute_NotADirectory(t *testing.T) {
 	err := os.WriteFile(filePath, []byte("not a dir"), 0644)
 	require.NoError(t, err, "Failed to create test file")
 
-	cmd := ListDirectoryCommand{
-		BaseCommand: BaseCommand{CommandID: "test-list-notadir-1"},
-		Path:        filePath, // Attempt to list a file
+	cmd := ListDirectoryTask{
+		BaseTask: BaseTask{TaskId: "test-list-notadir-1"},
+		Parameters: ListDirectoryParameters{
+			Path: filePath, // Attempt to list a file
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -147,9 +154,11 @@ func TestListDirectoryExecutor_Execute_Cancellation(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	tempDir := t.TempDir()
 
-	cmd := ListDirectoryCommand{
-		BaseCommand: BaseCommand{CommandID: "test-list-cancel-1"},
-		Path:        tempDir,
+	cmd := ListDirectoryTask{
+		BaseTask: BaseTask{TaskId: "test-list-cancel-1"},
+		Parameters: ListDirectoryParameters{
+			Path: tempDir,
+		},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -173,9 +182,11 @@ func TestListDirectoryExecutor_Execute_Timeout(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	tempDir := t.TempDir()
 
-	cmd := ListDirectoryCommand{
-		BaseCommand: BaseCommand{CommandID: "test-list-timeout-1"},
-		Path:        tempDir,
+	cmd := ListDirectoryTask{
+		BaseTask: BaseTask{TaskId: "test-list-timeout-1"},
+		Parameters: ListDirectoryParameters{
+			Path: tempDir,
+		},
 	}
 
 	testTimeout := 1 * time.Millisecond
@@ -198,15 +209,81 @@ func TestListDirectoryExecutor_Execute_Timeout(t *testing.T) {
 func TestListDirectoryExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	// Create a command of the wrong type
-	cmd := FileWriteCommand{
-		BaseCommand: BaseCommand{CommandID: "invalid-list-type-1"},
-		FilePath:    "some/path",
-		Content:     "data",
+	cmd := FileWriteTask{
+		BaseTask: BaseTask{TaskId: "test-write-1"},
+		Parameters: FileWriteParameters{
+			FilePath: "some/path",
+			Content:  "test content",
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 
 	require.Error(t, err, "Expected an error for invalid command type")
 	assert.Nil(t, resultsChan, "Expected nil channel on immediate error")
-	assert.Contains(t, err.Error(), "invalid command type: expected ListDirectoryCommand, got command.FileWriteCommand")
+}
+
+func TestListDirectoryExecutor_Execute_TerminalTaskHandling(t *testing.T) {
+	executor := NewListDirectoryExecutor()
+
+	testCases := []struct {
+		name           string
+		status         TaskStatus
+		expectedStatus TaskStatus
+	}{
+		{
+			name:           "Already succeeded task",
+			status:         StatusSucceeded,
+			expectedStatus: StatusSucceeded,
+		},
+		{
+			name:           "Already failed task",
+			status:         StatusFailed,
+			expectedStatus: StatusFailed,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a task that's already in a terminal state
+			cmd := ListDirectoryTask{
+				BaseTask: BaseTask{
+					TaskId:      "terminal-listdir-test",
+					Description: "Terminal listdirectory task test",
+					Status:      tc.status,
+					Output: OutputResult{
+						TaskID:  "terminal-listdir-test",
+						Status:  tc.status,
+						Message: "Pre-existing terminal state",
+					},
+				},
+				Parameters: ListDirectoryParameters{
+					Path: "nonexistent/directory", // Should not try to list this
+				},
+			}
+
+			resultsChan, err := executor.Execute(context.Background(), cmd)
+			require.NoError(t, err, "Execute should not return an error for terminal tasks")
+			require.NotNil(t, resultsChan, "Result channel should not be nil")
+
+			// Get the result from the channel
+			var finalResult OutputResult
+			select {
+			case result, ok := <-resultsChan:
+				require.True(t, ok, "Channel closed without receiving a result")
+				finalResult = result
+			case <-time.After(1 * time.Second):
+				t.Fatal("Timed out waiting for result from terminal task")
+			}
+
+			// Check the result
+			assert.Equal(t, cmd.TaskId, finalResult.TaskID, "TaskID should match")
+			assert.Equal(t, tc.expectedStatus, finalResult.Status, "Status should remain unchanged")
+			assert.Equal(t, "Pre-existing terminal state", finalResult.Message, "Message should be preserved")
+
+			// Ensure the channel is closed
+			_, ok := <-resultsChan
+			assert.False(t, ok, "Channel should be closed after sending the result")
+		})
+	}
 }

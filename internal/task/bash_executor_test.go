@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func collectStreamingResults(t *testing.T, results <-chan OutputResult, timeout 
 				// Return the last meaningful result received if any, otherwise empty.
 				// This case might be hit if the executor goroutine panics or exits unexpectedly.
 				t.Logf("Result channel closed unexpectedly.")
-				return finalResult, outputBuilder.String(), finalResult.CommandID != "" // Check if we ever got a result
+				return finalResult, outputBuilder.String(), finalResult.TaskID != "" // Check if we ever got a result
 			}
 
 			// Store intermediate or final result
@@ -65,12 +65,14 @@ func TestBashExecExecutor_Execute_Success_Streaming(t *testing.T) {
 	wd, _ := os.Getwd()
 	expectedCmdOutput := "Hello Executor!\n"
 	testCmd := fmt.Sprintf("echo '%s' && pwd", strings.TrimSpace(expectedCmdOutput)) // pwd output goes to stdout
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{CommandID: "test-success-stream-1"},
-		Command:     testCmd,
+	cmd := BashExecTask{
+		BaseTask: BaseTask{TaskId: "test-success-stream-1"},
+		Parameters: BashExecParameters{
+			Command: testCmd,
+		},
 	}
 	// Define the expected CWD temp file path
-	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.CommandID)
+	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
 	_ = os.Remove(expectedCwdFilePath)
 	// Ensure cleanup after test
@@ -82,8 +84,7 @@ func TestBashExecExecutor_Execute_Success_Streaming(t *testing.T) {
 	finalResult, combinedOutput, received := collectStreamingResults(t, resultsChan, 10*time.Second)
 	require.True(t, received, "Did not receive final result")
 
-	assert.Equal(t, cmd.CommandID, finalResult.CommandID)
-	assert.Equal(t, CmdBashExec, finalResult.CommandType)
+	assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 	assert.Equal(t, StatusSucceeded, finalResult.Status)
 	assert.Empty(t, finalResult.Error, "Expected no error message for successful command")
 
@@ -113,12 +114,14 @@ func TestBashExecExecutor_Execute_Failure_Streaming(t *testing.T) {
 	wd, _ := os.Getwd() // Get current WD to check the file content
 	expectedCmdOutput := "Going to fail\n"
 	testCmd := fmt.Sprintf("echo '%s' && exit 123", strings.TrimSpace(expectedCmdOutput))
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{CommandID: "test-fail-stream-1"},
-		Command:     testCmd,
+	cmd := BashExecTask{
+		BaseTask: BaseTask{TaskId: "test-fail-stream-1"},
+		Parameters: BashExecParameters{
+			Command: testCmd,
+		},
 	}
 	// Define the expected CWD temp file path
-	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.CommandID)
+	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
 	_ = os.Remove(expectedCwdFilePath)
 	// Ensure cleanup after test
@@ -130,8 +133,7 @@ func TestBashExecExecutor_Execute_Failure_Streaming(t *testing.T) {
 	finalResult, combinedOutput, received := collectStreamingResults(t, resultsChan, 10*time.Second)
 	require.True(t, received, "Did not receive final result")
 
-	assert.Equal(t, cmd.CommandID, finalResult.CommandID)
-	assert.Equal(t, CmdBashExec, finalResult.CommandType)
+	assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 	assert.Equal(t, StatusFailed, finalResult.Status)
 	assert.Contains(t, finalResult.Error, "Command failed with exit code 123", "Expected non-zero exit code error")
 	// The message should still contain CWD info even on failure
@@ -160,12 +162,14 @@ func TestBashExecExecutor_Execute_CombinedOutput_Streaming(t *testing.T) {
 	expectedStdout := "Output to stdout\n"
 	expectedStderr := "Error to stderr\n"
 	testCmd := fmt.Sprintf("echo '%s' >&1 && echo '%s' >&2", strings.TrimSpace(expectedStdout), strings.TrimSpace(expectedStderr))
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{CommandID: "test-combined-stream-1"},
-		Command:     testCmd,
+	cmd := BashExecTask{
+		BaseTask: BaseTask{TaskId: "test-combined-stream-1"},
+		Parameters: BashExecParameters{
+			Command: testCmd,
+		},
 	}
 	// Define the expected CWD temp file path
-	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.CommandID)
+	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
 	_ = os.Remove(expectedCwdFilePath)
 	// Ensure cleanup after test
@@ -203,12 +207,14 @@ func TestBashExecExecutor_Execute_ChangeDirectory_Streaming(t *testing.T) {
 	expectedCmdOutput := "Changed directory\n"
 	expectedFinalWd := "/private/tmp" // Expected final path on macOS, adjust if needed for other OS
 	testCmd := fmt.Sprintf("cd %s && echo '%s'", expectedFinalWd, strings.TrimSpace(expectedCmdOutput))
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{CommandID: "test-cd-stream-1"},
-		Command:     testCmd,
+	cmd := BashExecTask{
+		BaseTask: BaseTask{TaskId: "test-cd-stream-1"},
+		Parameters: BashExecParameters{
+			Command: testCmd,
+		},
 	}
 	// Define the expected CWD temp file path
-	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.CommandID)
+	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
 	_ = os.Remove(expectedCwdFilePath)
 	// Ensure cleanup after test
@@ -248,12 +254,14 @@ func TestBashExecExecutor_Execute_Timeout_Streaming(t *testing.T) {
 	const testTimeout = 100 * time.Millisecond
 	executor := NewBashExecExecutor()
 	testCmd := "echo 'Starting sleep...' && sleep 1 && echo 'Finished sleep'"
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{CommandID: "test-timeout-stream-1"},
-		Command:     testCmd,
+	cmd := BashExecTask{
+		BaseTask: BaseTask{TaskId: "test-timeout-stream-1"},
+		Parameters: BashExecParameters{
+			Command: testCmd,
+		},
 	}
 	// Define the expected CWD temp file path
-	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.CommandID)
+	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
 	_ = os.Remove(expectedCwdFilePath)
 	// Ensure cleanup after test
@@ -305,12 +313,14 @@ func TestBashExecExecutor_Execute_Cancellation_Streaming(t *testing.T) {
 	executor := NewBashExecExecutor()
 	// Command that would run for a while (reduced sleep time)
 	testCmd := "echo 'Starting long process...' && sleep 1 && echo 'Finished long process'"
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{CommandID: "test-cancel-stream-1"},
-		Command:     testCmd,
+	cmd := BashExecTask{
+		BaseTask: BaseTask{TaskId: "test-cancel-stream-1"},
+		Parameters: BashExecParameters{
+			Command: testCmd,
+		},
 	}
 	// Define the expected CWD temp file path
-	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.CommandID)
+	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
 	_ = os.Remove(expectedCwdFilePath)
 	// Ensure cleanup after test
@@ -340,9 +350,11 @@ func TestBashExecExecutor_Execute_Cancellation_Streaming(t *testing.T) {
 func TestBashExecExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewBashExecExecutor()
 	// Create a command of the wrong type
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "invalid-type-stream-1"},
-		FilePath:    "/some/file",
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "invalid-type-stream-1"},
+		Parameters: FileReadParameters{
+			FilePath: "/some/file",
+		},
 	}
 
 	// Pass context, although it won't be used here as error is immediate
@@ -351,17 +363,18 @@ func TestBashExecExecutor_Execute_InvalidCommandType(t *testing.T) {
 	// Expect an immediate error, not a result from the channel
 	require.Error(t, err, "Expected an error for invalid command type")
 	assert.Nil(t, resultsChan, "Expected nil channel on immediate error")
-	assert.Contains(t, err.Error(), "invalid command type: expected BashExecCommand, got command.FileReadCommand")
 }
 
 func TestBashExecExecutor_CreateErrorResult(t *testing.T) {
 	executor := NewBashExecExecutor()
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{
-			CommandID:   "test-error",
+	cmd := BashExecTask{
+		BaseTask: BaseTask{
+			TaskId:      "test-error",
 			Description: "Test error result",
 		},
-		Command: "echo 'test'",
+		Parameters: BashExecParameters{
+			Command: "echo 'test'",
+		},
 	}
 
 	tests := []struct {
@@ -395,12 +408,76 @@ func TestBashExecExecutor_CreateErrorResult(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := executor.CreateErrorResult(cmd, tt.err)
 
-			assert.Equal(t, cmd.CommandID, result.CommandID)
-			assert.Equal(t, CmdBashExec, result.CommandType)
+			assert.Equal(t, cmd.TaskId, result.TaskID)
 			assert.Equal(t, StatusFailed, result.Status)
 			assert.Contains(t, result.Message, "Command execution failed")
 			assert.Equal(t, tt.expectedError, result.Error)
 			assert.Empty(t, result.ResultData)
+		})
+	}
+}
+
+func TestBashExecExecutor_Execute_TerminalTaskHandling(t *testing.T) {
+	executor := NewBashExecExecutor()
+
+	testCases := []struct {
+		name           string
+		status         TaskStatus
+		expectedStatus TaskStatus
+	}{
+		{
+			name:           "Already succeeded task",
+			status:         StatusSucceeded,
+			expectedStatus: StatusSucceeded,
+		},
+		{
+			name:           "Already failed task",
+			status:         StatusFailed,
+			expectedStatus: StatusFailed,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a task that's already in a terminal state
+			cmd := BashExecTask{
+				BaseTask: BaseTask{
+					TaskId:      "terminal-bash-test",
+					Description: "Terminal bash task test",
+					Status:      tc.status,
+					Output: OutputResult{
+						TaskID:  "terminal-bash-test",
+						Status:  tc.status,
+						Message: "Pre-existing terminal state",
+					},
+				},
+				Parameters: BashExecParameters{
+					Command: "echo 'This should not execute'",
+				},
+			}
+
+			resultsChan, err := executor.Execute(context.Background(), cmd)
+			require.NoError(t, err, "Execute should not return an error for terminal tasks")
+			require.NotNil(t, resultsChan, "Result channel should not be nil")
+
+			// Get the result from the channel
+			var finalResult OutputResult
+			select {
+			case result, ok := <-resultsChan:
+				require.True(t, ok, "Channel closed without receiving a result")
+				finalResult = result
+			case <-time.After(1 * time.Second):
+				t.Fatal("Timed out waiting for result from terminal task")
+			}
+
+			// Check the result
+			assert.Equal(t, cmd.TaskId, finalResult.TaskID, "TaskID should match")
+			assert.Equal(t, tc.expectedStatus, finalResult.Status, "Status should remain unchanged")
+			assert.Equal(t, "Pre-existing terminal state", finalResult.Message, "Message should be preserved")
+
+			// Ensure the channel is closed
+			_, ok := <-resultsChan
+			assert.False(t, ok, "Channel should be closed after sending the result")
 		})
 	}
 }

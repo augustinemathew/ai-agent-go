@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -21,9 +21,18 @@ func NewRequestUserInputExecutor() *RequestUserInputExecutor {
 // this method just returns the prompt message.
 func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
 	// Type assertion to ensure we have a RequestUserInput command
-	userInputCmd, ok := cmd.(RequestUserInput)
+	userInputCmd, ok := cmd.(RequestUserInputTask)
 	if !ok {
 		return nil, fmt.Errorf("invalid command type: %T", cmd)
+	}
+
+	// Check if task is already in a terminal state
+	terminalChan, err := HandleTerminalTask(userInputCmd.TaskId, userInputCmd.Status, userInputCmd.Output)
+	if err != nil {
+		return nil, err
+	}
+	if terminalChan != nil {
+		return terminalChan, nil
 	}
 
 	// Create a channel to receive the result
@@ -37,10 +46,9 @@ func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan
 		select {
 		case <-ctx.Done():
 			results <- OutputResult{
-				CommandID:   userInputCmd.CommandID,
-				CommandType: CmdRequestUserInput,
-				Status:      StatusSucceeded,
-				Message:     userInputCmd.Prompt,
+				TaskID:  userInputCmd.TaskId,
+				Status:  StatusSucceeded,
+				Message: userInputCmd.Parameters.Prompt,
 			}
 			return
 		default:
@@ -48,10 +56,9 @@ func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan
 
 		// Return the prompt message as the result
 		results <- OutputResult{
-			CommandID:   userInputCmd.CommandID,
-			CommandType: CmdRequestUserInput,
-			Status:      StatusSucceeded,
-			Message:     userInputCmd.Prompt,
+			TaskID:  userInputCmd.TaskId,
+			Status:  StatusSucceeded,
+			Message: userInputCmd.Parameters.Prompt,
 		}
 	}()
 

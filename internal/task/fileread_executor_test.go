@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func collectStreamingResults_FileRead(t *testing.T, results <-chan OutputResult,
 		case result, ok := <-results:
 			if !ok {
 				t.Logf("Result channel closed unexpectedly.")
-				return finalResult, outputBuilder.String(), finalResult.CommandID != ""
+				return finalResult, outputBuilder.String(), finalResult.TaskID != ""
 			}
 			finalResult = result
 			if result.Status == StatusRunning {
@@ -81,9 +81,11 @@ func TestFileReadExecutor_Execute_Success(t *testing.T) {
 	expectedContent := "This is a test file.\nWith multiple lines.\n"
 	tempFilePath := createTempFile(t, expectedContent)
 
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "test-read-success-1"},
-		FilePath:    tempFilePath,
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "test-read-success-1"},
+		Parameters: FileReadParameters{
+			FilePath: tempFilePath,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -92,8 +94,7 @@ func TestFileReadExecutor_Execute_Success(t *testing.T) {
 	finalResult, combinedOutput, received := collectStreamingResults_FileRead(t, resultsChan, 5*time.Second)
 	require.True(t, received, "Did not receive final result")
 
-	assert.Equal(t, cmd.CommandID, finalResult.CommandID)
-	assert.Equal(t, CmdFileRead, finalResult.CommandType)
+	assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 	assert.Equal(t, StatusSucceeded, finalResult.Status)
 	assert.Empty(t, finalResult.Error, "Expected no error message")
 	assert.Contains(t, finalResult.Message, "File reading finished successfully in")
@@ -106,9 +107,11 @@ func TestFileReadExecutor_Execute_Success_MultiChunk(t *testing.T) {
 	fileSize := 15 * 1024
 	tempFilePath, expectedContent := createLargeTempFile(t, fileSize)
 
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "test-read-multichunk-1"},
-		FilePath:    tempFilePath,
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "test-read-multichunk-1"},
+		Parameters: FileReadParameters{
+			FilePath: tempFilePath,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -118,8 +121,7 @@ func TestFileReadExecutor_Execute_Success_MultiChunk(t *testing.T) {
 	finalResult, combinedOutput, received := collectStreamingResults_FileRead(t, resultsChan, 10*time.Second)
 	require.True(t, received, "Did not receive final result")
 
-	assert.Equal(t, cmd.CommandID, finalResult.CommandID)
-	assert.Equal(t, CmdFileRead, finalResult.CommandType)
+	assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 	assert.Equal(t, StatusSucceeded, finalResult.Status)
 	assert.Empty(t, finalResult.Error, "Expected no error message")
 	assert.Contains(t, finalResult.Message, "File reading finished successfully in")
@@ -135,9 +137,11 @@ func TestFileReadExecutor_Execute_EmptyFile(t *testing.T) {
 	expectedContent := ""
 	tempFilePath := createTempFile(t, expectedContent)
 
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "test-read-empty-1"},
-		FilePath:    tempFilePath,
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "test-read-empty-1"},
+		Parameters: FileReadParameters{
+			FilePath: tempFilePath,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -156,9 +160,11 @@ func TestFileReadExecutor_Execute_FileNotFound(t *testing.T) {
 	executor := NewFileReadExecutor()
 	nonExistentPath := filepath.Join(t.TempDir(), "non_existent_file.txt")
 
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "test-read-notfound-1"},
-		FilePath:    nonExistentPath,
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "test-read-notfound-1"},
+		Parameters: FileReadParameters{
+			FilePath: nonExistentPath,
+		},
 	}
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -181,9 +187,11 @@ func TestFileReadExecutor_Execute_Cancellation(t *testing.T) {
 	fileSize := 50 * 1024 // 50KB
 	tempFilePath, expectedContent := createLargeTempFile(t, fileSize)
 
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "test-read-cancel-1"},
-		FilePath:    tempFilePath,
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "test-read-cancel-1"},
+		Parameters: FileReadParameters{
+			FilePath: tempFilePath,
+		},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -217,9 +225,11 @@ func TestFileReadExecutor_Execute_Timeout(t *testing.T) {
 	fileSize := 55 * 1024
 	tempFilePath, expectedContent := createLargeTempFile(t, fileSize)
 
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "test-read-timeout-1"},
-		FilePath:    tempFilePath,
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "test-read-timeout-1"},
+		Parameters: FileReadParameters{
+			FilePath: tempFilePath,
+		},
 	}
 
 	testTimeout := 50 * time.Millisecond // Slightly longer timeout than 1ms to allow first chunk read
@@ -308,9 +318,11 @@ Assertions:
 func TestFileReadExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewFileReadExecutor()
 	// Create a command of the wrong type
-	cmd := BashExecCommand{
-		BaseCommand: BaseCommand{CommandID: "invalid-read-type-1"},
-		Command:     "echo hello",
+	cmd := BashExecTask{
+		BaseTask: BaseTask{TaskId: "invalid-read-type-1"},
+		Parameters: BashExecParameters{
+			Command: "echo hello",
+		},
 	}
 
 	// Pass context, although it won't be used here as error is immediate
@@ -319,7 +331,6 @@ func TestFileReadExecutor_Execute_InvalidCommandType(t *testing.T) {
 	// Expect an immediate error, not a result from the channel
 	require.Error(t, err, "Expected an error for invalid command type")
 	assert.Nil(t, resultsChan, "Expected nil channel on immediate error")
-	assert.Contains(t, err.Error(), "invalid command type: expected FileReadCommand, got command.BashExecCommand")
 }
 
 func TestFileReadExecutor_LineBasedReading(t *testing.T) {
@@ -374,11 +385,13 @@ func TestFileReadExecutor_LineBasedReading(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := FileReadCommand{
-				BaseCommand: BaseCommand{CommandID: "test-read-lines-" + tt.name},
-				FilePath:    tempFilePath,
-				StartLine:   tt.startLine,
-				EndLine:     tt.endLine,
+			cmd := FileReadTask{
+				BaseTask: BaseTask{TaskId: "test-read-lines-" + tt.name},
+				Parameters: FileReadParameters{
+					FilePath:  tempFilePath,
+					StartLine: tt.startLine,
+					EndLine:   tt.endLine,
+				},
 			}
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -406,9 +419,11 @@ func TestFileReadExecutor_ContextCancellation_FinalStatus(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executor := NewFileReadExecutor()
-	cmd := FileReadCommand{
-		BaseCommand: BaseCommand{CommandID: "test-cancel-final-status"},
-		FilePath:    tempFilePath,
+	cmd := FileReadTask{
+		BaseTask: BaseTask{TaskId: "test-cancel-final-status"},
+		Parameters: FileReadParameters{
+			FilePath: tempFilePath,
+		},
 	}
 
 	resultsChan, err := executor.Execute(ctx, cmd)
@@ -434,6 +449,149 @@ func TestFileReadExecutor_ContextCancellation_FinalStatus(t *testing.T) {
 	assert.Equal(t, StatusFailed, finalResult.Status, "Final status should be Failed")
 	assert.Contains(t, finalResult.Error, context.Canceled.Error(), "Error should indicate context cancellation")
 	assert.Contains(t, finalResult.Message, "File reading cancelled", "Message should indicate cancellation")
-	assert.Equal(t, cmd.CommandID, finalResult.CommandID, "CommandID should match")
-	assert.Equal(t, CmdFileRead, finalResult.CommandType, "CommandType should be FILE_READ")
+	assert.Equal(t, cmd.TaskId, finalResult.TaskID, "CommandID should match")
+}
+
+func TestFileReadExecutor_RelativePathHandling(t *testing.T) {
+	executor := NewFileReadExecutor()
+
+	// Create a temporary directory structure
+	tempDir := t.TempDir()
+	subDir := filepath.Join(tempDir, "subdir")
+	err := os.Mkdir(subDir, 0755)
+	require.NoError(t, err, "Failed to create subdirectory")
+
+	// Create a test file in the subdirectory
+	content := "Test content in subdirectory\n"
+	fileName := "test.txt"
+	filePath := filepath.Join(subDir, fileName)
+	err = os.WriteFile(filePath, []byte(content), 0644)
+	require.NoError(t, err, "Failed to create test file")
+
+	tests := []struct {
+		name          string
+		workingDir    string
+		filePath      string
+		expectedError bool
+	}{
+		{
+			name:          "absolute_path",
+			workingDir:    "",
+			filePath:      filePath,
+			expectedError: false,
+		},
+		{
+			name:          "relative_path_with_working_dir",
+			workingDir:    subDir,
+			filePath:      fileName,
+			expectedError: false,
+		},
+		{
+			name:          "relative_path_no_working_dir",
+			workingDir:    "",
+			filePath:      fileName,
+			expectedError: true,
+		},
+		{
+			name:          "relative_path_wrong_working_dir",
+			workingDir:    tempDir,
+			filePath:      fileName,
+			expectedError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := FileReadTask{
+				BaseTask: BaseTask{TaskId: "test-relative-path-" + tt.name},
+				Parameters: FileReadParameters{
+					BaseParameters: BaseParameters{
+						WorkingDirectory: tt.workingDir,
+					},
+					FilePath: tt.filePath,
+				},
+			}
+
+			resultsChan, err := executor.Execute(context.Background(), cmd)
+			require.NoError(t, err, "Execute setup failed")
+
+			finalResult, combinedOutput, received := collectStreamingResults_FileRead(t, resultsChan, 5*time.Second)
+			require.True(t, received, "Did not receive final result")
+
+			if tt.expectedError {
+				assert.Equal(t, StatusFailed, finalResult.Status)
+				assert.NotEmpty(t, finalResult.Error)
+				assert.Empty(t, combinedOutput)
+			} else {
+				assert.Equal(t, StatusSucceeded, finalResult.Status)
+				assert.Empty(t, finalResult.Error)
+				assert.Equal(t, content, combinedOutput)
+			}
+		})
+	}
+}
+
+func TestFileReadExecutor_Execute_TerminalTaskHandling(t *testing.T) {
+	executor := NewFileReadExecutor()
+
+	testCases := []struct {
+		name           string
+		status         TaskStatus
+		expectedStatus TaskStatus
+	}{
+		{
+			name:           "Already succeeded task",
+			status:         StatusSucceeded,
+			expectedStatus: StatusSucceeded,
+		},
+		{
+			name:           "Already failed task",
+			status:         StatusFailed,
+			expectedStatus: StatusFailed,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a task that's already in a terminal state
+			cmd := FileReadTask{
+				BaseTask: BaseTask{
+					TaskId:      "terminal-fileread-test",
+					Description: "Terminal fileread task test",
+					Status:      tc.status,
+					Output: OutputResult{
+						TaskID:  "terminal-fileread-test",
+						Status:  tc.status,
+						Message: "Pre-existing terminal state",
+					},
+				},
+				Parameters: FileReadParameters{
+					FilePath: "nonexistent/file.txt", // Should not try to read this
+				},
+			}
+
+			resultsChan, err := executor.Execute(context.Background(), cmd)
+			require.NoError(t, err, "Execute should not return an error for terminal tasks")
+			require.NotNil(t, resultsChan, "Result channel should not be nil")
+
+			// Get the result from the channel
+			var finalResult OutputResult
+			select {
+			case result, ok := <-resultsChan:
+				require.True(t, ok, "Channel closed without receiving a result")
+				finalResult = result
+			case <-time.After(1 * time.Second):
+				t.Fatal("Timed out waiting for result from terminal task")
+			}
+
+			// Check the result
+			assert.Equal(t, cmd.TaskId, finalResult.TaskID, "TaskID should match")
+			assert.Equal(t, tc.expectedStatus, finalResult.Status, "Status should remain unchanged")
+			assert.Equal(t, "Pre-existing terminal state", finalResult.Message, "Message should be preserved")
+
+			// Ensure the channel is closed
+			_, ok := <-resultsChan
+			assert.False(t, ok, "Channel should be closed after sending the result")
+		})
+	}
 }

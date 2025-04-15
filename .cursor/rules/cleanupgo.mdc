@@ -1,0 +1,44 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+**Prompt for AI Assistant: Large Go Codebase Cleanup**
+
+**Goal:** Collaboratively refactor and clean up a large Go codebase, focusing on improving readability, maintainability, and idiomatic Go usage. We must work incrementally due to the codebase size and potential AI context limitations.
+
+**Our Workflow:**
+
+We will follow these phases:
+
+**Phase 1: Analysis & Planning**
+
+1.  **Identify Cleanup Targets:**
+    * Please analyze the Go codebase (I will provide specific packages or directories to focus on if needed).
+    * Identify potential areas for cleanup and refactoring. Prioritize these based on potential impact (e.g., highest complexity, most duplicated code, poorest error handling, critical business logic paths, areas lacking tests).
+    * Provide a **prioritized list** of these potential cleanup areas.
+
+2.  **Establish Baseline:**
+    * Before we start, I will ensure the current test suite passes (`go test ./...`). This is our baseline.
+
+3.  **Create Execution Plan (`plan.md`):**
+    * Based on the prioritized list, generate the content for a Markdown file named `plan.md`.
+    * This plan should break down the cleanup areas into **small, concrete, actionable items**. Each item should ideally target a specific function, file, or pattern within a limited scope.
+    * Format each item like a checklist item in Markdown (e.g., `- [ ] Refactor error handling in pkg/users/auth.go:HandleLogin`).
+
+**Phase 2: Incremental Execution & Verification (The Loop)**
+
+*This phase will be iterative for each item in `plan.md`.*
+
+1.  **Select Plan Item:** I will provide you with the *next unchecked item* from `plan.md`.
+2.  **Propose ONE Small Change:** For the selected item, propose **one specific, small code change** (often within a single file or function) that addresses the task. Provide the code snippet showing the "before" and "after" or the necessary changes.
+3.  **Apply & Test (My Role):** I will apply the proposed change to the codebase locally.
+4.  **Verify (My Role):** I will compile (`go build ./...`) and run the tests (`go test ./...`). I will also perform a quick manual review.
+5.  **Feedback & Update Plan:**
+    * **If Successful:** I will confirm success. Please then provide the updated line for `plan.md`, marking the item as complete (e.g., `- [x] Refactor error handling in pkg/users/auth.go:HandleLogin`).
+    * **If Failed:** I will report the failure (e.g., test failure, compilation error, incorrect logic). We will either revert the change and you can propose an alternative small step for the *same* plan item, or we'll break the plan item down further.
+6.  **Repeat:** We continue this loop (Steps 1-5) for the next item in `plan.md`.
+
+**Language Focus:** All code examples and analysis should adhere to idiomatic Go practices.
+
+**Let's begin with Phase 1, Step 1: Identify Cleanup Targets.** Please analyze [Optional: Specify initial package/directory, e.g., `./pkg/api/handlers`] and provide the prioritized list of cleanup areas.

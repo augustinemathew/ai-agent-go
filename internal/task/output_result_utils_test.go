@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -25,75 +25,70 @@ func TestCollectAndConcatenateResults(t *testing.T) {
 		{
 			name: "Single Success Message",
 			inputMessages: []OutputResult{
-				{CommandID: "single-1", CommandType: CmdFileWrite, Status: StatusSucceeded, Message: "Done"},
+				{TaskID: "single-1", Status: StatusSucceeded, Message: "Done"},
 			},
 			expectedResult: OutputResult{ // Data is empty, fields match the single input
-				CommandID:   "single-1",
-				CommandType: CmdFileWrite,
-				Status:      StatusSucceeded,
-				Message:     "Done",
-				ResultData:  "",
+				TaskID:     "single-1",
+				Status:     StatusSucceeded,
+				Message:    "Done",
+				ResultData: "",
 			},
 		},
 		{
 			name: "Single Failure Message",
 			inputMessages: []OutputResult{
-				{CommandID: "single-fail-1", CommandType: CmdBashExec, Status: StatusFailed, Message: "Oops", Error: "exit 1"},
+				{TaskID: "single-fail-1", Status: StatusFailed, Message: "Oops", Error: "exit 1"},
 			},
 			expectedResult: OutputResult{ // Data is empty, fields match the single input
-				CommandID:   "single-fail-1",
-				CommandType: CmdBashExec,
-				Status:      StatusFailed,
-				Message:     "Oops",
-				Error:       "exit 1",
-				ResultData:  "",
+				TaskID:     "single-fail-1",
+				Status:     StatusFailed,
+				Message:    "Oops",
+				Error:      "exit 1",
+				ResultData: "",
 			},
 		},
 		{
 			name: "Streaming Success (e.g., FileRead)",
 			inputMessages: []OutputResult{
-				{CommandID: "stream-1", CommandType: CmdFileRead, Status: StatusRunning, Message: "Reading...", ResultData: "Chunk 1 data. "},
-				{CommandID: "stream-1", CommandType: CmdFileRead, Status: StatusRunning, Message: "Still reading...", ResultData: "Chunk 2 data!"},
-				{CommandID: "stream-1", CommandType: CmdFileRead, Status: StatusSucceeded, Message: "Finished reading."},
+				{TaskID: "stream-1", Status: StatusRunning, Message: "Reading...", ResultData: "Chunk 1 data. "},
+				{TaskID: "stream-1", Status: StatusRunning, Message: "Still reading...", ResultData: "Chunk 2 data!"},
+				{TaskID: "stream-1", Status: StatusSucceeded, Message: "Finished reading."},
 			},
 			expectedResult: OutputResult{ // Fields from last message, data concatenated
-				CommandID:   "stream-1",
-				CommandType: CmdFileRead,
-				Status:      StatusSucceeded,
-				Message:     "Finished reading.",
-				ResultData:  "Chunk 1 data. Chunk 2 data!",
+				TaskID:     "stream-1",
+				Status:     StatusSucceeded,
+				Message:    "Finished reading.",
+				ResultData: "Chunk 1 data. Chunk 2 data!",
 			},
 		},
 		{
 			name: "Streaming Failure (e.g., BashExec)",
 			inputMessages: []OutputResult{
-				{CommandID: "stream-fail-1", CommandType: CmdBashExec, Status: StatusRunning, Message: "Running...", ResultData: "stdout line 1\n"},
-				{CommandID: "stream-fail-1", CommandType: CmdBashExec, Status: StatusRunning, Message: "Still running...", ResultData: "stderr line 1\n"},
-				{CommandID: "stream-fail-1", CommandType: CmdBashExec, Status: StatusFailed, Message: "Command failed.", Error: "exit code 127"},
+				{TaskID: "stream-fail-1", Status: StatusRunning, Message: "Running...", ResultData: "stdout line 1\n"},
+				{TaskID: "stream-fail-1", Status: StatusRunning, Message: "Still running...", ResultData: "stderr line 1\n"},
+				{TaskID: "stream-fail-1", Status: StatusFailed, Message: "Command failed.", Error: "exit code 127"},
 			},
 			expectedResult: OutputResult{ // Fields from last message, data concatenated
-				CommandID:   "stream-fail-1",
-				CommandType: CmdBashExec,
-				Status:      StatusFailed,
-				Message:     "Command failed.",
-				Error:       "exit code 127",
-				ResultData:  "stdout line 1\nstderr line 1\n",
+				TaskID:     "stream-fail-1",
+				Status:     StatusFailed,
+				Message:    "Command failed.",
+				Error:      "exit code 127",
+				ResultData: "stdout line 1\nstderr line 1\n",
 			},
 		},
 		{
 			name: "Streaming with Empty Data Chunks",
 			inputMessages: []OutputResult{
-				{CommandID: "stream-empty-1", CommandType: CmdFileRead, Status: StatusRunning, Message: "Reading...", ResultData: "Data Chunk A."}, // Has data
-				{CommandID: "stream-empty-1", CommandType: CmdFileRead, Status: StatusRunning, Message: "Reading..."},                              // No data
-				{CommandID: "stream-empty-1", CommandType: CmdFileRead, Status: StatusRunning, Message: "Reading...", ResultData: "Data Chunk B."}, // Has data
-				{CommandID: "stream-empty-1", CommandType: CmdFileRead, Status: StatusSucceeded, Message: "Done."},
+				{TaskID: "stream-empty-1", Status: StatusRunning, Message: "Reading...", ResultData: "Data Chunk A."}, // Has data
+				{TaskID: "stream-empty-1", Status: StatusRunning, Message: "Reading..."},                              // No data
+				{TaskID: "stream-empty-1", Status: StatusRunning, Message: "Reading...", ResultData: "Data Chunk B."}, // Has data
+				{TaskID: "stream-empty-1", Status: StatusSucceeded, Message: "Done."},
 			},
 			expectedResult: OutputResult{ // Fields from last message, data concatenated (empty ignored)
-				CommandID:   "stream-empty-1",
-				CommandType: CmdFileRead,
-				Status:      StatusSucceeded,
-				Message:     "Done.",
-				ResultData:  "Data Chunk A.Data Chunk B.",
+				TaskID:     "stream-empty-1",
+				Status:     StatusSucceeded,
+				Message:    "Done.",
+				ResultData: "Data Chunk A.Data Chunk B.",
 			},
 		},
 		{
@@ -103,20 +98,18 @@ func TestCollectAndConcatenateResults(t *testing.T) {
 				msgs := make([]OutputResult, 0, chunkCount+1)
 				for i := 0; i < chunkCount; i++ {
 					msgs = append(msgs, OutputResult{
-						CommandID:   "large-file-1",
-						CommandType: CmdFileRead,
-						Status:      StatusRunning,
-						ResultData:  fmt.Sprintf("data_chunk_%d;", i),
+						TaskID:     "large-file-1",
+						Status:     StatusRunning,
+						ResultData: fmt.Sprintf("data_chunk_%d;", i),
 					})
 				}
-				msgs = append(msgs, OutputResult{CommandID: "large-file-1", CommandType: CmdFileRead, Status: StatusSucceeded, Message: "Large read done."})
+				msgs = append(msgs, OutputResult{TaskID: "large-file-1", Status: StatusSucceeded, Message: "Large read done."})
 				return msgs
 			}(),
 			expectedResult: OutputResult{ // Fields from last message, data concatenated
-				CommandID:   "large-file-1",
-				CommandType: CmdFileRead,
-				Status:      StatusSucceeded,
-				Message:     "Large read done.",
+				TaskID:  "large-file-1",
+				Status:  StatusSucceeded,
+				Message: "Large read done.",
 				ResultData: func() string {
 					var sb strings.Builder
 					for i := 0; i < 500; i++ {
@@ -165,59 +158,55 @@ func TestCombineOutputResults(t *testing.T) {
 		{
 			name: "Normal - Single Success Message",
 			inputMessages: []OutputResult{
-				{CommandID: "single-1", CommandType: CmdFileWrite, Status: StatusSucceeded, Message: "Done"},
+				{TaskID: "single-1", Status: StatusSucceeded, Message: "Done"},
 			},
 			expectedResult: OutputResult{
-				CommandID:   "single-1",
-				CommandType: CmdFileWrite,
-				Status:      StatusSucceeded,
-				Message:     "Done",
-				ResultData:  "",
+				TaskID:     "single-1",
+				Status:     StatusSucceeded,
+				Message:    "Done",
+				ResultData: "",
 			},
 		},
 		{
 			name: "Normal - Single Failure Message",
 			inputMessages: []OutputResult{
-				{CommandID: "single-fail-1", CommandType: CmdBashExec, Status: StatusFailed, Message: "Oops", Error: "exit 1"},
+				{TaskID: "single-fail-1", Status: StatusFailed, Message: "Oops", Error: "exit 1"},
 			},
 			expectedResult: OutputResult{
-				CommandID:   "single-fail-1",
-				CommandType: CmdBashExec,
-				Status:      StatusFailed,
-				Message:     "Oops",
-				Error:       "exit 1",
-				ResultData:  "",
+				TaskID:     "single-fail-1",
+				Status:     StatusFailed,
+				Message:    "Oops",
+				Error:      "exit 1",
+				ResultData: "",
 			},
 		},
 		{
 			name: "Normal - Streaming Success",
 			inputMessages: []OutputResult{
-				{CommandID: "stream-1", CommandType: CmdFileRead, Status: StatusRunning, Message: "Reading...", ResultData: "Chunk 1 data. "},
-				{CommandID: "stream-1", CommandType: CmdFileRead, Status: StatusRunning, Message: "Still reading...", ResultData: "Chunk 2 data!"},
-				{CommandID: "stream-1", CommandType: CmdFileRead, Status: StatusSucceeded, Message: "Finished reading."},
+				{TaskID: "stream-1", Status: StatusRunning, Message: "Reading...", ResultData: "Chunk 1 data. "},
+				{TaskID: "stream-1", Status: StatusRunning, Message: "Still reading...", ResultData: "Chunk 2 data!"},
+				{TaskID: "stream-1", Status: StatusSucceeded, Message: "Finished reading."},
 			},
 			expectedResult: OutputResult{
-				CommandID:   "stream-1",
-				CommandType: CmdFileRead,
-				Status:      StatusSucceeded,
-				Message:     "Finished reading.",
-				ResultData:  "Chunk 1 data. Chunk 2 data!",
+				TaskID:     "stream-1",
+				Status:     StatusSucceeded,
+				Message:    "Finished reading.",
+				ResultData: "Chunk 1 data. Chunk 2 data!",
 			},
 		},
 		{
 			name: "Normal - Streaming Failure",
 			inputMessages: []OutputResult{
-				{CommandID: "stream-fail-1", CommandType: CmdBashExec, Status: StatusRunning, Message: "Running...", ResultData: "stdout line 1\n"},
-				{CommandID: "stream-fail-1", CommandType: CmdBashExec, Status: StatusRunning, Message: "Still running...", ResultData: "stderr line 1\n"},
-				{CommandID: "stream-fail-1", CommandType: CmdBashExec, Status: StatusFailed, Message: "Command failed.", Error: "exit code 127"},
+				{TaskID: "stream-fail-1", Status: StatusRunning, Message: "Running...", ResultData: "stdout line 1\n"},
+				{TaskID: "stream-fail-1", Status: StatusRunning, Message: "Still running...", ResultData: "stderr line 1\n"},
+				{TaskID: "stream-fail-1", Status: StatusFailed, Message: "Command failed.", Error: "exit code 127"},
 			},
 			expectedResult: OutputResult{
-				CommandID:   "stream-fail-1",
-				CommandType: CmdBashExec,
-				Status:      StatusFailed,
-				Message:     "Command failed.",
-				Error:       "exit code 127",
-				ResultData:  "stdout line 1\nstderr line 1\n",
+				TaskID:     "stream-fail-1",
+				Status:     StatusFailed,
+				Message:    "Command failed.",
+				Error:      "exit code 127",
+				ResultData: "stdout line 1\nstderr line 1\n",
 			},
 		},
 		{
@@ -227,20 +216,18 @@ func TestCombineOutputResults(t *testing.T) {
 				msgs := make([]OutputResult, 0, chunkCount+1)
 				for i := 0; i < chunkCount; i++ {
 					msgs = append(msgs, OutputResult{
-						CommandID:   "large-file-1",
-						CommandType: CmdFileRead,
-						Status:      StatusRunning,
-						ResultData:  fmt.Sprintf("data_chunk_%d;", i),
+						TaskID:     "large-file-1",
+						Status:     StatusRunning,
+						ResultData: fmt.Sprintf("data_chunk_%d;", i),
 					})
 				}
-				msgs = append(msgs, OutputResult{CommandID: "large-file-1", CommandType: CmdFileRead, Status: StatusSucceeded, Message: "Large read done."})
+				msgs = append(msgs, OutputResult{TaskID: "large-file-1", Status: StatusSucceeded, Message: "Large read done."})
 				return msgs
 			}(),
 			expectedResult: OutputResult{
-				CommandID:   "large-file-1",
-				CommandType: CmdFileRead,
-				Status:      StatusSucceeded,
-				Message:     "Large read done.",
+				TaskID:  "large-file-1",
+				Status:  StatusSucceeded,
+				Message: "Large read done.",
 				ResultData: func() string {
 					var sb strings.Builder
 					for i := 0; i < 500; i++ {
@@ -298,9 +285,9 @@ func TestCombineOutputResults(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			// Send a few messages then cancel
-			resultsChan <- OutputResult{CommandID: "cancel-mid-1", Status: StatusRunning, ResultData: "Part 1."}
+			resultsChan <- OutputResult{TaskID: "cancel-mid-1", Status: StatusRunning, ResultData: "Part 1."}
 			time.Sleep(10 * time.Millisecond) // Give collector a chance to read
-			resultsChan <- OutputResult{CommandID: "cancel-mid-1", Status: StatusRunning, ResultData: "Part 2."}
+			resultsChan <- OutputResult{TaskID: "cancel-mid-1", Status: StatusRunning, ResultData: "Part 2."}
 			time.Sleep(10 * time.Millisecond)
 			cancel() // Cancel the context
 			// Don't close the channel, let cancellation handle termination
@@ -310,12 +297,11 @@ func TestCombineOutputResults(t *testing.T) {
 		wg.Wait() // Ensure goroutine finishes before assertion
 
 		expectedResult := OutputResult{
-			CommandID:   "cancel-mid-1", // Should have ID from last message read
-			CommandType: "",             // Type might not be set on RUNNING
-			Status:      StatusFailed,
-			Error:       context.Canceled.Error(),
-			Message:     "Result collection cancelled for command cancel-mid-1.",
-			ResultData:  "Part 1.Part 2.", // Data collected before cancel
+			TaskID:     "cancel-mid-1", // Should have ID from last message read
+			Status:     StatusFailed,
+			Error:      context.Canceled.Error(),
+			Message:    "Result collection cancelled for command cancel-mid-1.",
+			ResultData: "Part 1.Part 2.", // Data collected before cancel
 		}
 		if diff := cmp.Diff(expectedResult, actualResult); diff != "" {
 			t.Errorf("CombineOutputResults mismatch (-want +got):\n%s", diff)

@@ -1,15 +1,19 @@
-package command
+package task
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/sourcegraph/go-diff/diff"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -133,10 +137,12 @@ func TestPatchFileExecutor_Execute_Success(t *testing.T) {
 			}
 
 			executor := NewPatchFileExecutor()
-			cmd := PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: tc.commandID},
-				FilePath:    filePath,
-				Patch:       tc.patch,
+			cmd := PatchFileTask{
+				BaseTask: BaseTask{TaskId: tc.commandID},
+				Parameters: PatchFileParameters{
+					FilePath: filePath,
+					Patch:    tc.patch,
+				},
 			}
 
 			// Test passing command by value
@@ -155,11 +161,8 @@ func TestPatchFileExecutor_Execute_Success(t *testing.T) {
 			if result.Status != StatusSucceeded {
 				t.Errorf("Expected status SUCCEEDED, got %s. Msg: %s, Err: %s", result.Status, result.Message, result.Error)
 			}
-			if result.CommandID != tc.commandID {
-				t.Errorf("Expected command ID %s, got %s", tc.commandID, result.CommandID)
-			}
-			if result.CommandType != CmdPatchFile {
-				t.Errorf("Expected command type %s, got %s", CmdPatchFile, result.CommandType)
+			if result.TaskID != tc.commandID {
+				t.Errorf("Expected command ID %s, got %s", tc.commandID, result.TaskID)
 			}
 
 			// Verify file content
@@ -189,7 +192,7 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 	testCases := []struct {
 		name           string
 		cmd            any // Use any to test type errors
-		expectedStatus ExecutionStatus
+		expectedStatus TaskStatus
 		expectedError  string // Substring to check in result.Error or initial error
 		initialErr     bool   // Whether Execute itself should return an error
 	}{
@@ -202,10 +205,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Empty File Path",
-			cmd: PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-path-1"},
-				FilePath:    "",
-				Patch:       "patch",
+			cmd: PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-path-1"},
+				Parameters: PatchFileParameters{
+					FilePath: "",
+					Patch:    "patch",
+				},
 			},
 			expectedStatus: "", // No result expected
 			expectedError:  "file path cannot be empty",
@@ -213,10 +218,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Context Mismatch - File Exists",
-			cmd: &PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-ctx-exists-1"},
-				FilePath:    existingFilePath,
-				Patch:       "--- a/test_fail_exists.txt\n+++ b/test_fail_exists.txt\n@@ -1,3 +1,3 @@\n line1\n-WRONG_LINE\n+correct_line\n line3\n",
+			cmd: &PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-ctx-exists-1"},
+				Parameters: PatchFileParameters{
+					FilePath: existingFilePath,
+					Patch:    "--- a/test_fail_exists.txt\n+++ b/test_fail_exists.txt\n@@ -1,3 +1,3 @@\n line1\n-WRONG_LINE\n+correct_line\n line3\n",
+				},
 			},
 			expectedStatus: StatusFailed,
 			expectedError:  "context mismatch",
@@ -224,10 +231,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Context Mismatch - File Non-Existent", // Apply modify patch to non-existent file
-			cmd: &PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-ctx-nonexist-1"},
-				FilePath:    nonExistentFilePath,
-				Patch:       "--- a/test_fail_nonexist.txt\n+++ b/test_fail_nonexist.txt\n@@ -1,1 +1,1 @@\n-line1\n+newline1\n", // Requires line1 to exist
+			cmd: &PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-ctx-nonexist-1"},
+				Parameters: PatchFileParameters{
+					FilePath: nonExistentFilePath,
+					Patch:    "--- a/test_fail_nonexist.txt\n+++ b/test_fail_nonexist.txt\n@@ -1,1 +1,1 @@\n-line1\n+newline1\n", // Requires line1 to exist
+				},
 			},
 			expectedStatus: StatusFailed,
 			expectedError:  "context mismatch",
@@ -235,10 +244,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Parse Error - File Exists",
-			cmd: &PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-parse-exists-1"},
-				FilePath:    existingFilePath,
-				Patch:       "this is not a valid patch format",
+			cmd: &PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-parse-exists-1"},
+				Parameters: PatchFileParameters{
+					FilePath: existingFilePath,
+					Patch:    "this is not a valid patch format",
+				},
 			},
 			expectedStatus: StatusFailed,
 			expectedError:  "failed to parse patch",
@@ -246,10 +257,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Parse Error - File Non-Existent",
-			cmd: &PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-parse-nonexist-1"},
-				FilePath:    nonExistentFilePath,
-				Patch:       "this is not a valid patch format",
+			cmd: &PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-parse-nonexist-1"},
+				Parameters: PatchFileParameters{
+					FilePath: nonExistentFilePath,
+					Patch:    "this is not a valid patch format",
+				},
 			},
 			expectedStatus: StatusFailed,
 			expectedError:  "failed to parse patch",
@@ -257,10 +270,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Multi-File Patch Error - File Exists",
-			cmd: &PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-multi-exists-1"},
-				FilePath:    existingFilePath,
-				Patch:       "--- a/file1.txt\n+++ b/file1.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n--- a/file2.txt\n+++ b/file2.txt\n@@ -1,1 +1,1 @@\n-c\n+d\n",
+			cmd: &PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-multi-exists-1"},
+				Parameters: PatchFileParameters{
+					FilePath: existingFilePath,
+					Patch:    "--- a/file1.txt\n+++ b/file1.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n--- a/file2.txt\n+++ b/file2.txt\n@@ -1,1 +1,1 @@\n-c\n+d\n",
+				},
 			},
 			expectedStatus: StatusFailed,
 			expectedError:  "patch contains multiple file diffs",
@@ -268,10 +283,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Multi-File Patch Error - File Non-Existent",
-			cmd: &PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-multi-nonexist-1"},
-				FilePath:    nonExistentFilePath,
-				Patch:       "--- a/file1.txt\n+++ b/file1.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n--- a/file2.txt\n+++ b/file2.txt\n@@ -1,1 +1,1 @@\n-c\n+d\n",
+			cmd: &PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-multi-nonexist-1"},
+				Parameters: PatchFileParameters{
+					FilePath: nonExistentFilePath,
+					Patch:    "--- a/file1.txt\n+++ b/file1.txt\n@@ -1,1 +1,1 @@\n-a\n+b\n--- a/file2.txt\n+++ b/file2.txt\n@@ -1,1 +1,1 @@\n-c\n+d\n",
+				},
 			},
 			expectedStatus: StatusFailed,
 			expectedError:  "patch contains multiple file diffs",
@@ -279,10 +296,12 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 		},
 		{
 			name: "Write Error (Read Only File)",
-			cmd: &PatchFileCommand{
-				BaseCommand: BaseCommand{CommandID: "fail-write-1"},
-				FilePath:    readOnlyFilePath,
-				Patch:       "--- a/readonly.txt\n+++ b/readonly.txt\n@@ -1,1 +1,1 @@\n-cant write\n+can write\n",
+			cmd: &PatchFileTask{
+				BaseTask: BaseTask{TaskId: "fail-write-1"},
+				Parameters: PatchFileParameters{
+					FilePath: readOnlyFilePath,
+					Patch:    "--- a/readonly.txt\n+++ b/readonly.txt\n@@ -1,1 +1,1 @@\n-cant write\n+can write\n",
+				},
 			},
 			expectedStatus: StatusFailed,
 			expectedError:  "permission denied", // Error message check might need OS-specific adjustment
@@ -363,19 +382,23 @@ func TestPatchFileExecutor_Execute_ContextCancellation(t *testing.T) {
 	initialContentExists := "line1\nline2\n"
 	filePathExists := createPatchTestTempFile(t, dir, "cancellation_test_exists.txt", initialContentExists)
 	patchExists := "--- a/cancellation_test_exists.txt\n+++ b/cancellation_test_exists.txt\n@@ -1,2 +1,3 @@\n line1\n+inserted\n line2\n"
-	cmdExists := &PatchFileCommand{
-		BaseCommand: BaseCommand{CommandID: "cancel-exists-1"},
-		FilePath:    filePathExists,
-		Patch:       patchExists,
+	cmdExists := &PatchFileTask{
+		BaseTask: BaseTask{TaskId: "cancel-exists-1"},
+		Parameters: PatchFileParameters{
+			FilePath: filePathExists,
+			Patch:    patchExists,
+		},
 	}
 
 	// Case 2: File Does Not Exist
 	filePathNonExistent := filepath.Join(dir, "cancellation_test_nonexist.txt")
 	patchNonExistent := "--- /dev/null\n+++ b/cancellation_test_nonexist.txt\n@@ -0,0 +1,1 @@\n+created line\n" // Patch to create
-	cmdNonExistent := &PatchFileCommand{
-		BaseCommand: BaseCommand{CommandID: "cancel-nonexist-1"},
-		FilePath:    filePathNonExistent,
-		Patch:       patchNonExistent,
+	cmdNonExistent := &PatchFileTask{
+		BaseTask: BaseTask{TaskId: "cancel-nonexist-1"},
+		Parameters: PatchFileParameters{
+			FilePath: filePathNonExistent,
+			Patch:    patchNonExistent,
+		},
 	}
 
 	executor := NewPatchFileExecutor()
@@ -700,6 +723,165 @@ func TestLineVerification(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func BenchmarkPatchProcessing(b *testing.B) {
+	// Generate test data of different sizes
+	generateContent := func(lines, lineLength int) []byte {
+		content := make([]byte, 0, lines*(lineLength+1))
+		line := bytes.Repeat([]byte("a"), lineLength)
+		for i := 0; i < lines; i++ {
+			content = append(content, line...)
+			content = append(content, '\n')
+		}
+		return content
+	}
+
+	generatePatch := func(lines, lineLength int, modifyEvery int) []byte {
+		var patch bytes.Buffer
+		patch.WriteString("--- a/test.txt\n+++ b/test.txt\n")
+
+		currentLine := 1
+		for currentLine < lines {
+			// Write hunk header
+			patch.WriteString(fmt.Sprintf("@@ -%d,%d +%d,%d @@\n",
+				currentLine, modifyEvery+1, currentLine, modifyEvery+2))
+
+			// Write context and changes
+			for i := 0; i < modifyEvery; i++ {
+				line := bytes.Repeat([]byte("a"), lineLength)
+				patch.WriteByte(' ')
+				patch.Write(line)
+				patch.WriteByte('\n')
+				currentLine++
+			}
+
+			// Add a new line
+			newLine := bytes.Repeat([]byte("b"), lineLength)
+			patch.WriteByte('+')
+			patch.Write(newLine)
+			patch.WriteByte('\n')
+
+			if currentLine >= lines {
+				break
+			}
+		}
+		return patch.Bytes()
+	}
+
+	benchCases := []struct {
+		name        string
+		lines       int
+		lineLength  int
+		modifyEvery int
+	}{
+		{"Small_File", 100, 50, 10},
+		{"Medium_File", 1000, 100, 50},
+		{"Large_File", 10000, 200, 100},
+		{"Huge_File", 100000, 500, 1000},
+	}
+
+	for _, bc := range benchCases {
+		original := generateContent(bc.lines, bc.lineLength)
+		patch := generatePatch(bc.lines, bc.lineLength, bc.modifyEvery)
+
+		b.Run(fmt.Sprintf("PrepareLines_%s", bc.name), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(original)))
+			for i := 0; i < b.N; i++ {
+				lines := prepareOriginalLines(original)
+				runtime.KeepAlive(lines)
+			}
+		})
+
+		b.Run(fmt.Sprintf("FormatOutput_%s", bc.name), func(b *testing.B) {
+			lines := prepareOriginalLines(original)
+			fileDiff, _ := diff.ParseFileDiff(patch)
+
+			b.ReportAllocs()
+			b.SetBytes(int64(len(original)))
+			for i := 0; i < b.N; i++ {
+				output, _ := formatFinalOutput(lines, fileDiff, true)
+				runtime.KeepAlive(output)
+			}
+		})
+
+		b.Run(fmt.Sprintf("FullPatch_%s", bc.name), func(b *testing.B) {
+			executor := NewPatchFileExecutor()
+			b.ReportAllocs()
+			b.SetBytes(int64(len(original)))
+			for i := 0; i < b.N; i++ {
+				output, _ := executor.patcher.ApplyPatch(original, patch)
+				runtime.KeepAlive(output)
+			}
+		})
+	}
+}
+
+func TestPatchFileExecutor_Execute_TerminalTaskHandling(t *testing.T) {
+	executor := NewPatchFileExecutor()
+
+	testCases := []struct {
+		name           string
+		status         TaskStatus
+		expectedStatus TaskStatus
+	}{
+		{
+			name:           "Already succeeded task",
+			status:         StatusSucceeded,
+			expectedStatus: StatusSucceeded,
+		},
+		{
+			name:           "Already failed task",
+			status:         StatusFailed,
+			expectedStatus: StatusFailed,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a task that's already in a terminal state
+			cmd := PatchFileTask{
+				BaseTask: BaseTask{
+					TaskId:      "terminal-patchfile-test",
+					Description: "Terminal patchfile task test",
+					Status:      tc.status,
+					Output: OutputResult{
+						TaskID:  "terminal-patchfile-test",
+						Status:  tc.status,
+						Message: "Pre-existing terminal state",
+					},
+				},
+				Parameters: PatchFileParameters{
+					FilePath: "nonexistent/file.txt", // Should not try to patch this
+					Patch:    "--- a/file.txt\n+++ b/file.txt\n@@ -1,1 +1,1 @@\n-old\n+new",
+				},
+			}
+
+			resultsChan, err := executor.Execute(context.Background(), cmd)
+			require.NoError(t, err, "Execute should not return an error for terminal tasks")
+			require.NotNil(t, resultsChan, "Result channel should not be nil")
+
+			// Get the result from the channel
+			var finalResult OutputResult
+			select {
+			case result, ok := <-resultsChan:
+				require.True(t, ok, "Channel closed without receiving a result")
+				finalResult = result
+			case <-time.After(1 * time.Second):
+				t.Fatal("Timed out waiting for result from terminal task")
+			}
+
+			// Check the result
+			assert.Equal(t, cmd.TaskId, finalResult.TaskID, "TaskID should match")
+			assert.Equal(t, tc.expectedStatus, finalResult.Status, "Status should remain unchanged")
+			assert.Equal(t, "Pre-existing terminal state", finalResult.Message, "Message should be preserved")
+
+			// Ensure the channel is closed
+			_, ok := <-resultsChan
+			assert.False(t, ok, "Channel should be closed after sending the result")
 		})
 	}
 }

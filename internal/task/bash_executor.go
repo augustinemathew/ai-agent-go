@@ -1,7 +1,7 @@
 // Package command provides implementations for executing various types of commands
 // in the AI agent backend. These commands are executed asynchronously and report
 // their results through channels.
-package command
+package task
 
 import (
 	"bufio"
@@ -76,9 +76,15 @@ echo "---" >&2
 //
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	bashCmd, ok := cmd.(BashExecCommand)
+	bashCmd, ok := cmd.(BashExecTask)
 	if !ok {
 		return nil, fmt.Errorf("invalid command type: expected BashExecCommand, got %T", cmd)
+	}
+
+	// If the task is already in a terminal state, return it as is
+	terminalChan, err := HandleTerminalTask(bashCmd.TaskId, bashCmd.Status, bashCmd.Output)
+	if err != nil || terminalChan != nil {
+		return terminalChan, err
 	}
 
 	// Buffered channel (size 1) for streaming results + final status.
@@ -89,6 +95,9 @@ func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 	go func() {
 		defer close(results)
 
+		// Update task status to Running
+		bashCmd.Status = StatusRunning
+
 		// Setup context with timeout
 		const internalTimeout = 5 * time.Minute
 		execCtx, cancel := context.WithTimeout(ctx, internalTimeout)
@@ -97,14 +106,22 @@ func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 		// Setup command with pipes for output
 		execCmd, combinedPipe, err := setupCommand(execCtx, bashCmd)
 		if err != nil {
-			results <- createErrorResult(bashCmd, err.Error())
+			finalResult := createErrorResult(bashCmd, err.Error())
+			// Update task output
+			bashCmd.Status = StatusFailed
+			bashCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
 		// Start command execution and track time
 		startTime := time.Now()
 		if err := execCmd.Start(); err != nil {
-			results <- createErrorResult(bashCmd, fmt.Sprintf("Failed to start command: %v", err))
+			finalResult := createErrorResult(bashCmd, fmt.Sprintf("Failed to start command: %v", err))
+			// Update task output
+			bashCmd.Status = StatusFailed
+			bashCmd.UpdateOutput(&finalResult)
+			results <- finalResult
 			return
 		}
 
@@ -125,6 +142,11 @@ func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 
 		// Send final result
 		finalResult := processFinalResult(execCtx, execCmd, bashCmd, waitErr, duration, internalTimeout)
+
+		// Update task status and output
+		bashCmd.Status = finalResult.Status
+		bashCmd.UpdateOutput(&finalResult)
+
 		results <- finalResult
 	}()
 
@@ -134,9 +156,9 @@ func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 // setupCommand prepares the exec.Command for execution with the bash script.
 // It configures stdout and stderr pipes and returns the command, a combined reader for
 // stdout and stderr, and any error that occurred during setup.
-func setupCommand(ctx context.Context, bashCmd BashExecCommand) (*exec.Cmd, io.Reader, error) {
+func setupCommand(ctx context.Context, bashCmd BashExecTask) (*exec.Cmd, io.Reader, error) {
 	// Construct the full script
-	fullScript := fmt.Sprintf(bashScriptTemplate, bashCmd.CommandID, bashCmd.Command)
+	fullScript := fmt.Sprintf(bashScriptTemplate, bashCmd.TaskId, bashCmd.Parameters.Command)
 
 	// Prepare command for streaming using the execution context
 	execCmd := exec.CommandContext(ctx, "/bin/bash", "-c", fullScript)
@@ -160,7 +182,7 @@ func setupCommand(ctx context.Context, bashCmd BashExecCommand) (*exec.Cmd, io.R
 // streamCommandOutput reads from the provided reader and sends each line to the results channel.
 // The function respects context cancellation and reports errors appropriately.
 // It uses the provided WaitGroup to signal when all output has been processed.
-func streamCommandOutput(ctx context.Context, reader io.Reader, cmd BashExecCommand,
+func streamCommandOutput(ctx context.Context, reader io.Reader, cmd BashExecTask,
 	results chan<- OutputResult, wg *sync.WaitGroup) {
 
 	wg.Add(1)
@@ -178,10 +200,9 @@ func streamCommandOutput(ctx context.Context, reader io.Reader, cmd BashExecComm
 			default:
 				// Context still active, send the result
 				results <- OutputResult{
-					CommandID:   cmd.CommandID,
-					CommandType: CmdBashExec,
-					Status:      StatusRunning,
-					ResultData:  line + "\n", // Add newline back as scanner strips it
+					TaskID:     cmd.TaskId,
+					Status:     StatusRunning,
+					ResultData: line + "\n", // Add newline back as scanner strips it
 				}
 			}
 		}
@@ -198,7 +219,7 @@ func streamCommandOutput(ctx context.Context, reader io.Reader, cmd BashExecComm
 // an appropriate OutputResult. It handles various error conditions including timeouts,
 // cancellations, and command execution failures.
 // It also attempts to read the final working directory from the temporary file.
-func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd BashExecCommand,
+func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd BashExecTask,
 	waitErr error, duration time.Duration, timeout time.Duration) OutputResult {
 
 	finalStatus := StatusSucceeded // Assume success initially
@@ -228,7 +249,7 @@ func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd BashExecComm
 	}
 
 	// Read CWD file (attempt even on error/cancel, might have been written before kill)
-	cwdFilePath := fmt.Sprintf("/tmp/%s.cwd", bashCmd.CommandID)
+	cwdFilePath := fmt.Sprintf("/tmp/%s.cwd", bashCmd.TaskId)
 	cwdBytes, readErr := os.ReadFile(cwdFilePath)
 	if readErr == nil {
 		finalCwd := strings.TrimSpace(string(cwdBytes))
@@ -239,11 +260,10 @@ func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd BashExecComm
 	}
 
 	return OutputResult{
-		CommandID:   bashCmd.CommandID,
-		CommandType: CmdBashExec,
-		Status:      finalStatus,
-		Message:     message,
-		Error:       errMsg,
+		TaskID:  bashCmd.TaskId,
+		Status:  finalStatus,
+		Message: message,
+		Error:   errMsg,
 	}
 }
 
@@ -267,28 +287,26 @@ func waitGroupWithContext(ctx context.Context, wg *sync.WaitGroup) error {
 }
 
 // createErrorResult creates a standardized error OutputResult for a BashExecCommand.
-func createErrorResult(cmd BashExecCommand, errMsg string) OutputResult {
+func createErrorResult(cmd BashExecTask, errMsg string) OutputResult {
 	return OutputResult{
-		CommandID:   cmd.CommandID,
-		CommandType: CmdBashExec,
-		Status:      StatusFailed,
-		Message:     "Command execution failed.",
-		Error:       errMsg,
+		TaskID:  cmd.TaskId,
+		Status:  StatusFailed,
+		Message: "Command execution failed.",
+		Error:   errMsg,
 	}
 }
 
 // CreateErrorResult creates an error result for a failed command execution.
 // This is a method on BashExecExecutor to satisfy potential interface requirements.
-func (e *BashExecExecutor) CreateErrorResult(cmd BashExecCommand, err error) OutputResult {
+func (e *BashExecExecutor) CreateErrorResult(cmd BashExecTask, err error) OutputResult {
 	var errMsg string
 	if err != nil {
 		errMsg = err.Error()
 	}
 	return OutputResult{
-		CommandID:   cmd.CommandID,
-		CommandType: CmdBashExec,
-		Status:      StatusFailed,
-		Message:     fmt.Sprintf("Command execution failed: %v", err),
-		Error:       errMsg,
+		TaskID:  cmd.TaskId,
+		Status:  StatusFailed,
+		Message: fmt.Sprintf("Command execution failed: %v", err),
+		Error:   errMsg,
 	}
 }

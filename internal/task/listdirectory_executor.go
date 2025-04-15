@@ -1,4 +1,4 @@
-package command
+package task
 
 import (
 	"context"
@@ -22,16 +22,25 @@ func NewListDirectoryExecutor() *ListDirectoryExecutor {
 // It expects the cmd argument to be of type ListDirectoryCommand.
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	listCmd, ok := cmd.(ListDirectoryCommand)
+	listCmd, ok := cmd.(ListDirectoryTask)
 	if !ok {
 		return nil, fmt.Errorf("invalid command type: expected ListDirectoryCommand, got %T", cmd)
+	}
+
+	// Check if task is already in a terminal state
+	terminalChan, err := HandleTerminalTask(listCmd.TaskId, listCmd.Status, listCmd.Output)
+	if err != nil {
+		return nil, err
+	}
+	if terminalChan != nil {
+		return terminalChan, nil
 	}
 
 	results := make(chan OutputResult, 1) // Buffered channel for the single final result
 
 	go func() {
-		cmdID := listCmd.CommandID // For logging
-		fmt.Printf("[%s] ListDirectory goroutine started for path: %s\n", cmdID, listCmd.Path)
+		cmdID := listCmd.TaskId // For logging
+		fmt.Printf("[%s] ListDirectory goroutine started for path: %s\n", cmdID, listCmd.Parameters.Path)
 		startTime := time.Now()
 		var finalErr error
 		var directoryListing string
@@ -46,7 +55,7 @@ func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan Ou
 		defer func() {
 			fmt.Printf("[%s] Deferred function executing. finalErr (before final check): %v\n", cmdID, finalErr)
 			duration := time.Since(startTime)
-			var finalStatus ExecutionStatus
+			var finalStatus TaskStatus
 			var errMsg string
 			var message string
 			effectiveErr := finalErr
@@ -81,18 +90,17 @@ func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan Ou
 				fmt.Printf("[%s] Deferred: effectiveErr is nil, reporting SUCCEEDED\n", cmdID)
 				finalStatus = StatusSucceeded
 				errMsg = ""
-				message = fmt.Sprintf("Successfully listed directory '%s' in %v.", listCmd.Path, duration.Round(time.Millisecond))
+				message = fmt.Sprintf("Successfully listed directory '%s' in %v.", listCmd.Parameters.Path, duration.Round(time.Millisecond))
 			}
 
 			// Send final result
 			fmt.Printf("[%s] Deferred: Sending final result: Status=%s, Msg='%s', Err='%s', DataLen=%d\n", cmdID, finalStatus, message, errMsg, len(directoryListing))
 			results <- OutputResult{
-				CommandID:   listCmd.CommandID,
-				CommandType: CmdListDirectory,
-				Status:      finalStatus,
-				Message:     message,
-				Error:       errMsg,
-				ResultData:  directoryListing, // Include listing data on success
+				TaskID:     listCmd.TaskId,
+				Status:     finalStatus,
+				Message:    message,
+				Error:      errMsg,
+				ResultData: directoryListing, // Include listing data on success
 			}
 			fmt.Printf("[%s] Deferred: Final result sent (or attempted)\n", cmdID)
 		}()
@@ -109,9 +117,9 @@ func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan Ou
 		}
 
 		// Get absolute path
-		absPath, err := filepath.Abs(listCmd.Path)
+		absPath, err := filepath.Abs(listCmd.Parameters.Path)
 		if err != nil {
-			finalErr = fmt.Errorf("failed to get absolute path for '%s': %w", listCmd.Path, err)
+			finalErr = fmt.Errorf("failed to get absolute path for '%s': %w", listCmd.Parameters.Path, err)
 			fmt.Printf("[%s] Error getting absolute path. finalErr set to: %v\n", cmdID, finalErr)
 			return
 		}

@@ -1,7 +1,7 @@
 // Package command provides implementations for executing various types of commands
 // in the AI agent backend. These commands are executed asynchronously and report
 // their results through channels.
-package command
+package task
 
 import (
 	"context"
@@ -9,7 +9,14 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"ai-agent-v3/internal/task/fileutils"
 )
+
+// FileWriteResult represents the result of a file write operation
+type FileWriteResult struct {
+	FilePath string
+}
 
 // FileWriteExecutor handles the execution of FileWriteCommand.
 // It manages file creation, writing content, and proper error handling.
@@ -20,76 +27,68 @@ func NewFileWriteExecutor() *FileWriteExecutor {
 	return &FileWriteExecutor{}
 }
 
-// Execute writes the content specified in the FileWriteCommand to the target file path.
-// It expects the cmd argument to be of type FileWriteCommand.
-// The execution is performed asynchronously and respects cancellation signals from the
-// provided context. Results are sent through the returned channel.
-//
-// Returns a channel for results and an error if the command type is wrong or execution setup fails.
+// Execute implements the Executor interface for FileWriteCommand.
 func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	fileWriteCmd, ok := cmd.(FileWriteCommand)
-	if !ok {
-		return nil, fmt.Errorf("invalid command type: expected FileWriteCommand, got %T", cmd)
+	var fileWriteCmd *FileWriteTask
+	switch v := cmd.(type) {
+	case *FileWriteTask:
+		fileWriteCmd = v
+	case FileWriteTask:
+		fileWriteCmd = &v
+	default:
+		return nil, fmt.Errorf("invalid command type for FileWriteExecutor")
 	}
 
-	// Buffered channel (size 1) for the final status. No intermediate results for write.
+	// Check if task is already in a terminal state
+	terminalChan, err := HandleTerminalTask(fileWriteCmd.TaskId, fileWriteCmd.Status, fileWriteCmd.Output)
+	if err != nil {
+		return nil, err
+	}
+	if terminalChan != nil {
+		return terminalChan, nil
+	}
+
+	// Create a channel for results
 	results := make(chan OutputResult, 1)
-
 	go func() {
-		cmdID := fileWriteCmd.CommandID
+		defer close(results)
 		startTime := time.Now()
-		var finalErr error
 
-		// Close the channel after sending the final result
-		defer func() {
-			close(results)
-		}()
-
-		// Prepare and send the final result before the channel is closed
-		defer func() {
-			// Use the existing error or check for context cancellation one last time
-			effectiveErr := finalErr
-			if effectiveErr == nil {
-				if err := checkContext(ctx); err != nil {
-					effectiveErr = err
-				}
-			}
-
-			// Create and send the final result based on the error status
-			duration := time.Since(startTime)
-			finalResult := createFinalResult(cmdID, fileWriteCmd.FilePath, effectiveErr, duration)
-
-			results <- finalResult
-		}()
-
-		// Check for immediate cancellation before starting work
-		if err := checkContext(ctx); err != nil {
-			finalErr = err
+		// Check context before starting
+		if err := ctx.Err(); err != nil {
+			results <- createFinalResult(fileWriteCmd.TaskId, "", err, time.Since(startTime))
 			return
 		}
 
-		// Write the file content
-		finalErr = writeFileContent(ctx, fileWriteCmd.FilePath, fileWriteCmd.Content)
+		// Resolve the file path
+		resolvedPath, err := fileutils.ResolveFilePath(fileWriteCmd.Parameters.FilePath, fileWriteCmd.Parameters.WorkingDirectory)
+		if err != nil {
+			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, fmt.Errorf("failed to resolve file path: %w", err), time.Since(startTime))
+			return
+		}
+
+		// Check context before writing file
+		if err := ctx.Err(); err != nil {
+			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, err, time.Since(startTime))
+			return
+		}
+
+		// Write the file
+		if err := writeFileContent(ctx, resolvedPath, fileWriteCmd.Parameters.Content); err != nil {
+			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, err, time.Since(startTime))
+			return
+		}
+
+		results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, nil, time.Since(startTime))
 	}()
 
 	return results, nil
 }
 
-// checkContext checks if the context is done and returns the context's error if it is.
-// It returns nil if the context is still active.
-func checkContext(ctx context.Context) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	default:
-		return nil
-	}
-}
-
 // createFinalResult constructs an OutputResult based on the error status,
 // setting appropriate messages and status codes for the FileWriteCommand.
 func createFinalResult(cmdID, filePath string, err error, duration time.Duration) OutputResult {
-	var status ExecutionStatus
+	var status TaskStatus
 	var errMsg string
 	var message string
 
@@ -113,11 +112,10 @@ func createFinalResult(cmdID, filePath string, err error, duration time.Duration
 	}
 
 	return OutputResult{
-		CommandID:   cmdID,
-		CommandType: CmdFileWrite,
-		Status:      status,
-		Message:     message,
-		Error:       errMsg,
+		TaskID:  cmdID,
+		Status:  status,
+		Message: message,
+		Error:   errMsg,
 	}
 }
 
@@ -127,10 +125,15 @@ func createFinalResult(cmdID, filePath string, err error, duration time.Duration
 // Returns an error if the file cannot be opened, written to, or closed properly,
 // or if the context is cancelled during execution.
 func writeFileContent(ctx context.Context, filePath, content string) error {
+	// Check context before opening file
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// Open the file for writing (create if not exists, truncate if exists)
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open/create file '%s' for writing: %w", filePath, err)
+		return fmt.Errorf("failed to open/create file '%s': %w", filePath, err)
 	}
 
 	// Always close the file even if writing fails
@@ -138,8 +141,8 @@ func writeFileContent(ctx context.Context, filePath, content string) error {
 		file.Close()
 	}()
 
-	// Check context before writing to handle cancellation
-	if err := checkContext(ctx); err != nil {
+	// Check context before writing
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 
