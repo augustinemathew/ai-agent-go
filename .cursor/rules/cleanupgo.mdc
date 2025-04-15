@@ -1,13 +1,16 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 **Prompt for AI Assistant: Large Go Codebase Cleanup**
 
 **Goal:** Collaboratively refactor and clean up a large Go codebase, focusing on improving readability, maintainability, and idiomatic Go usage. We must work incrementally due to the codebase size and potential AI context limitations.
 
 **Our Workflow:**
+
+* Record plan in `plan.md`
+* Refer back to plan
 
 We will follow these phases:
 

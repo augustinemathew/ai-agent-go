@@ -13,6 +13,24 @@ import (
 	"ai-agent-v3/internal/task/fileutils"
 )
 
+// Error constants for FileWriteExecutor
+const (
+	// Command validation errors
+	errFileWriteInvalidCommandType = "invalid command type for FileWriteExecutor"
+
+	// File operation errors
+	errFileWriteResolveFilePath = "failed to resolve file path: %w"
+	errFileWriteOpenFileFailed  = "failed to open/create file '%s': %w"
+	errFileWriteWriteFileFailed = "failed to write content to file '%s': %w"
+	errFileWriteIncompleteWrite = "incomplete write to file '%s': wrote %d bytes, expected %d"
+
+	// Status messages
+	msgFileWriteCancelled = "File writing cancelled."
+	msgFileWriteTimedOut  = "File writing timed out."
+	msgFileWriteFailed    = "File writing failed: %v"
+	msgFileWriteSucceeded = "File writing finished successfully to '%s' in %v."
+)
+
 // FileWriteResult represents the result of a file write operation
 type FileWriteResult struct {
 	FilePath string
@@ -36,7 +54,7 @@ func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 	case FileWriteTask:
 		fileWriteCmd = &v
 	default:
-		return nil, fmt.Errorf("invalid command type for FileWriteExecutor")
+		return nil, fmt.Errorf(errFileWriteInvalidCommandType)
 	}
 
 	// Check if task is already in a terminal state
@@ -63,7 +81,7 @@ func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		// Resolve the file path
 		resolvedPath, err := fileutils.ResolveFilePath(fileWriteCmd.Parameters.FilePath, fileWriteCmd.Parameters.WorkingDirectory)
 		if err != nil {
-			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, fmt.Errorf("failed to resolve file path: %w", err), time.Since(startTime))
+			results <- createFinalResult(fileWriteCmd.TaskId, resolvedPath, fmt.Errorf(errFileWriteResolveFilePath, err), time.Since(startTime))
 			return
 		}
 
@@ -98,16 +116,16 @@ func createFinalResult(cmdID, filePath string, err error, duration time.Duration
 
 		// Create specific messages based on error type
 		if errors.Is(err, context.Canceled) {
-			message = "File writing cancelled."
+			message = msgFileWriteCancelled
 		} else if errors.Is(err, context.DeadlineExceeded) {
-			message = "File writing timed out."
+			message = msgFileWriteTimedOut
 		} else {
-			message = fmt.Sprintf("File writing failed: %v", err)
+			message = fmt.Sprintf(msgFileWriteFailed, err)
 		}
 	} else {
 		status = StatusSucceeded
 		errMsg = ""
-		message = fmt.Sprintf("File writing finished successfully to '%s' in %v.",
+		message = fmt.Sprintf(msgFileWriteSucceeded,
 			filePath, duration.Round(time.Millisecond))
 	}
 
@@ -133,13 +151,11 @@ func writeFileContent(ctx context.Context, filePath, content string) error {
 	// Open the file for writing (create if not exists, truncate if exists)
 	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open/create file '%s': %w", filePath, err)
+		return fmt.Errorf(errFileWriteOpenFileFailed, filePath, err)
 	}
 
 	// Always close the file even if writing fails
-	defer func() {
-		file.Close()
-	}()
+	defer file.Close()
 
 	// Check context before writing
 	if err := ctx.Err(); err != nil {
@@ -150,13 +166,12 @@ func writeFileContent(ctx context.Context, filePath, content string) error {
 	contentBytes := []byte(content)
 	n, err := file.Write(contentBytes)
 	if err != nil {
-		return fmt.Errorf("failed to write content to file '%s': %w", filePath, err)
+		return fmt.Errorf(errFileWriteWriteFileFailed, filePath, err)
 	}
 
 	// Verify that all bytes were written
 	if n != len(contentBytes) {
-		return fmt.Errorf("incomplete write to file '%s': wrote %d bytes, expected %d",
-			filePath, n, len(contentBytes))
+		return fmt.Errorf(errFileWriteIncompleteWrite, filePath, n, len(contentBytes))
 	}
 
 	return nil

@@ -98,7 +98,7 @@ func TestBashExecExecutor_Execute_Success_Streaming(t *testing.T) {
 	// Check the final status message for CWD and duration
 	expectedCwdMsg := fmt.Sprintf("Final CWD: %s", wd)
 	assert.Contains(t, finalResult.Message, expectedCwdMsg, "Final message should contain the final CWD")
-	assert.Contains(t, finalResult.Message, "Command finished in", "Final message should contain duration")
+	assert.Contains(t, finalResult.Message, "Command completed successfully in", "Final message should contain duration")
 
 	// Verify the temp file exists (was not deleted by executor)
 	_, err = os.Stat(expectedCwdFilePath)
@@ -341,7 +341,7 @@ func TestBashExecExecutor_Execute_Cancellation_Streaming(t *testing.T) {
 
 	require.True(t, received, "Did not receive final result after cancellation")
 	assert.Equal(t, StatusFailed, finalResult.Status)
-	assert.Contains(t, finalResult.Error, "Command execution cancelled by parent context.", "Expected cancellation error message")
+	assert.Equal(t, "Command execution cancelled.", finalResult.Error, "Expected cancellation error message")
 	assert.Equal(t, "Command execution cancelled.", finalResult.Message)
 
 	// No longer checking combinedOutput or CWD file for cancellation test, as timing can be unreliable.

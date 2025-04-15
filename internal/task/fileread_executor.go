@@ -61,16 +61,7 @@ func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 
 // executeFileRead handles the actual file reading process in a separate goroutine.
 func (e *FileReadExecutor) executeFileRead(ctx context.Context, cmd FileReadTask, results chan<- OutputResult) {
-	cmdID := cmd.TaskId
-	logDebug := func(format string, args ...interface{}) {
-		fmt.Printf("[%s] "+format, append([]interface{}{cmdID}, args...)...)
-	}
-
-	logDebug("FileRead goroutine started")
-	defer func() {
-		logDebug("FileRead goroutine closing results channel")
-		close(results)
-	}()
+	defer close(results)
 
 	// Update task status to Running
 	cmd.Status = StatusRunning

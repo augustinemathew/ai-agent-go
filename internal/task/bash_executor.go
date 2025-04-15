@@ -15,6 +15,23 @@ import (
 	"time"
 )
 
+// Error constants for BashExecExecutor
+const (
+	// Command validation errors
+	errBashInvalidCommandType = "invalid command type: expected BashExecCommand, got %T"
+
+	// Execution setup errors
+	errBashStdoutPipe   = "failed to get stdout pipe: %w"
+	errBashStderrPipe   = "failed to get stderr pipe: %w"
+	errBashStartCommand = "Failed to start command: %v"
+
+	// Status messages
+	msgBashCancelled = "Command execution cancelled."
+	msgBashTimedOut  = "Command execution timed out after %v."
+	msgBashFailed    = "Command failed with exit code %d: %v"
+	msgBashSucceeded = "Command completed successfully in %v."
+)
+
 // BashExecExecutor handles the execution of BashExecCommand.
 // It implements the CommandExecutor interface for shell command execution.
 type BashExecExecutor struct {
@@ -78,7 +95,7 @@ echo "---" >&2
 func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
 	bashCmd, ok := cmd.(BashExecTask)
 	if !ok {
-		return nil, fmt.Errorf("invalid command type: expected BashExecCommand, got %T", cmd)
+		return nil, fmt.Errorf(errBashInvalidCommandType, cmd)
 	}
 
 	// If the task is already in a terminal state, return it as is
@@ -117,7 +134,7 @@ func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 		// Start command execution and track time
 		startTime := time.Now()
 		if err := execCmd.Start(); err != nil {
-			finalResult := createErrorResult(bashCmd, fmt.Sprintf("Failed to start command: %v", err))
+			finalResult := createErrorResult(bashCmd, fmt.Sprintf(errBashStartCommand, err))
 			// Update task output
 			bashCmd.Status = StatusFailed
 			bashCmd.UpdateOutput(&finalResult)
@@ -165,12 +182,12 @@ func setupCommand(ctx context.Context, bashCmd BashExecTask) (*exec.Cmd, io.Read
 
 	stdoutPipe, err := execCmd.StdoutPipe()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get stdout pipe: %w", err)
+		return nil, nil, fmt.Errorf(errBashStdoutPipe, err)
 	}
 
 	stderrPipe, err := execCmd.StderrPipe()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get stderr pipe: %w", err)
+		return nil, nil, fmt.Errorf(errBashStderrPipe, err)
 	}
 
 	// Combine stdout and stderr for reading
@@ -224,23 +241,23 @@ func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd BashExecTask
 
 	finalStatus := StatusSucceeded // Assume success initially
 	errMsg := ""
-	message := fmt.Sprintf("Command finished in %v.", duration.Round(time.Millisecond))
+	message := fmt.Sprintf(msgBashSucceeded, duration.Round(time.Millisecond))
 
 	// Check context error first, as it overrides waitErr
 	contextErr := ctx.Err()
 	if contextErr == context.DeadlineExceeded {
 		finalStatus = StatusFailed
-		errMsg = fmt.Sprintf("Command timed out (internal deadline: %v)", timeout)
+		errMsg = fmt.Sprintf(msgBashTimedOut, timeout)
 		message = "Command execution timed out."
 	} else if contextErr == context.Canceled {
 		finalStatus = StatusFailed
-		errMsg = "Command execution cancelled by parent context."
+		errMsg = msgBashCancelled
 		message = "Command execution cancelled."
 	} else if waitErr != nil {
 		// Context was okay, so this is a command execution error (like non-zero exit)
 		finalStatus = StatusFailed
 		if exitErr, ok := waitErr.(*exec.ExitError); ok {
-			errMsg = fmt.Sprintf("Command failed with exit code %d: %s", exitErr.ExitCode(), waitErr.Error())
+			errMsg = fmt.Sprintf(msgBashFailed, exitErr.ExitCode(), waitErr.Error())
 		} else {
 			// Other errors (e.g., I/O problems reported by Wait)
 			errMsg = fmt.Sprintf("Command execution failed after wait: %v", waitErr)

@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+// Error constants for RequestUserInputExecutor
+const (
+	errUserInputInvalidCommandType = "invalid command type for RequestUserInputExecutor: %T"
+)
+
 // RequestUserInputExecutor handles the execution of RequestUserInput.
 type RequestUserInputExecutor struct {
 	// Dependencies for handling user input requests can be added here.
@@ -23,7 +28,7 @@ func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan
 	// Type assertion to ensure we have a RequestUserInput command
 	userInputCmd, ok := cmd.(RequestUserInputTask)
 	if !ok {
-		return nil, fmt.Errorf("invalid command type: %T", cmd)
+		return nil, fmt.Errorf(errUserInputInvalidCommandType, cmd)
 	}
 
 	// Check if task is already in a terminal state
@@ -42,19 +47,9 @@ func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan
 	go func() {
 		defer close(results)
 
-		// Check if context is already cancelled
-		select {
-		case <-ctx.Done():
-			results <- OutputResult{
-				TaskID:  userInputCmd.TaskId,
-				Status:  StatusSucceeded,
-				Message: userInputCmd.Parameters.Prompt,
-			}
-			return
-		default:
-		}
-
-		// Return the prompt message as the result
+		// Send the prompt message as the result, regardless of context state
+		// Context cancellation is not really applicable for user input prompts
+		// as they are essentially just messages being passed
 		results <- OutputResult{
 			TaskID:  userInputCmd.TaskId,
 			Status:  StatusSucceeded,
