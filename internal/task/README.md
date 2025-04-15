@@ -2,6 +2,34 @@
 
 This package defines and executes various tasks asynchronously within the AI agent backend. It provides a structured way to represent tasks and their results using JSON, facilitating communication between different parts of the system (e.g., a web server handling requests and a background worker executing tasks).
 
+## Recent Updates
+
+- **Logging Improvements**: Removed unnecessary debugging logs from all executors for cleaner code and better performance.
+- **Test Consistency**: Aligned test assertions with current implementation for more reliable testing.
+- **Code Cleanup**: Streamlined executor implementations for better readability and maintainability.
+
+## Architectural Improvements
+
+### Simplified Executor Design
+
+Each executor now follows a more consistent pattern:
+1. **Execute Entry Point**: Validates command type and creates a channel for results
+2. **Execution Logic**: Runs in a separate goroutine for non-blocking operation
+3. **Clean Error Handling**: Standardized error patterns for consistent reporting
+
+### Error Handling Improvements
+
+- **Context-Aware Execution**: All operations properly respect context cancellation signals
+- **Graceful Resource Cleanup**: Ensures resources are properly released on cancellation 
+- **Consistent Error Messages**: Standardized error reporting format across executor types
+- **Status Transitions**: Clear state management from PENDING → RUNNING → SUCCEEDED/FAILED
+
+### Performance Optimization
+
+- **Reduced Logging Overhead**: Removed debug logging to improve performance
+- **Efficient Channel Management**: Optimized channel usage to prevent leaks
+- **Simplified Code Paths**: Straightforward execution flow improves maintainability
+
 ## Core Concepts
 
 1.  **Tasks**: Represent specific actions to be performed. Each task type has a dedicated struct embedding `BaseTask`.
@@ -178,7 +206,7 @@ Executes a shell command (`BashExecTask`). Supports both single-line and multili
 {
   "task_id": "happy-bash-2",
   "status": "SUCCEEDED",
-  "message": "Command finished in 10ms. Final CWD: /Users/augustine/ai-agent-4/ai-agent-go.",
+  "message": "Command completed successfully in 10ms. Final CWD: /Users/augustine/ai-agent-4/ai-agent-go.",
   "resultData": "Starting multiline script...\nCurrent directory: /Users/augustine/ai-agent-4/ai-agent-go\ntotal 24\ndrwxr-xr-x   9 augustine  staff   288 Apr 14 22:43 .\ndrwxr-xr-x   3 augustine  staff    96 Apr 14 17:50 ..\ndrwxr-xr-x@  3 augustine  staff    96 Apr 14 18:25 .cursor\ndrwxr-xr-x  12 augustine  staff   384 Apr 14 23:09 .git\n-rw-r--r--   1 augustine  staff   414 Apr 14 17:50 .gitignore\ndrwxr-xr-x   3 augustine  staff    96 Apr 14 17:50 cmd\n-rw-r--r--@  1 augustine  staff   299 Apr 14 18:00 go.mod\n-rw-r--r--   1 augustine  staff  1658 Apr 14 17:50 go.sum\ndrwxr-xr-x   3 augustine  staff    96 Apr 14 17:55 internal\nEnvironment variables:\nPATH=/opt/homebrew/Cellar/go/1.24.1/libexec/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/miniconda/base/bin:/opt/homebrew/Caskroom/miniconda/base/condabin\nINFOPATH=/opt/homebrew/share/info:/opt/homebrew/share/info:\nScript complete!\nStarting main script execution...\nInitial directory: /Users/augustine/ai-agent-4/ai-agent-go\n---\n\n############################################\n# Script Exiting\n# Exit Status: 0\n# Final Working Directory: /Users/augustine/ai-agent-4/ai-agent-go\n############################################\n"
 }
 ```
