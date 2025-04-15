@@ -201,8 +201,13 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task, p
 
 	// Read all results from the channel and forward intermediate results
 	for result := range childResultsChan {
-		// Forward child task execution updates to parent channel
-		// Always forward all child task updates, not just running ones
+		// First, forward the original message with the original child task ID
+		// but only if it has meaningful content
+		if result.Message != "" || result.ResultData != "" {
+			parentResults <- result
+		}
+
+		// Then, also send a summary message with the group task ID
 		message := fmt.Sprintf("Child task %d/%d [%s]: %s", childIndex+1, totalChildren, childTask.TaskId, result.Message)
 
 		// If there's ResultData and the Message is empty, include the ResultData in the forwarded message

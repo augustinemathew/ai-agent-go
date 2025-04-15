@@ -496,36 +496,51 @@ func TestGroupExecutor_WithFileReadTask(t *testing.T) {
 	}
 
 	// Collect and log all messages to see the child task updates
-	var messages []string
+	var results []task.OutputResult
 	var lastResult task.OutputResult
 
 	for result := range resultsChan {
-		// Log each message to see what's happening
-		t.Logf("Result: %s - %s", result.Status, result.Message)
-		messages = append(messages, result.Message)
+		// Log each message with its task ID to see what's happening
+		t.Logf("Result: TaskID=%s Status=%s Message=%s", result.TaskID, result.Status, result.Message)
+		results = append(results, result)
 		lastResult = result
 	}
 
 	// Verify execution succeeded
 	assert.Equal(t, task.StatusSucceeded, lastResult.Status, "Group task should have succeeded")
 
-	// Verify we got the file read task output messages
-	fileReadMessageFound := false
+	// Verify we got messages with the correct task IDs
+	fileWriteTaskIDFound := false
+	fileReadTaskIDFound := false
+	groupTaskIDFound := false
 	contentFound := false
-	for _, msg := range messages {
-		// Look for messages that show the file read task's id
-		if strings.Contains(msg, "file-read-task") {
-			fileReadMessageFound = true
-			t.Logf("Found file read task message: %s", msg)
 
-			// Check if we have file content
-			if strings.Contains(msg, "Line") {
-				contentFound = true
-				t.Logf("Found content output: %s", msg)
-			}
+	// Check for different task IDs in the results
+	for _, result := range results {
+		// Check task IDs
+		switch result.TaskID {
+		case "file-write-task":
+			fileWriteTaskIDFound = true
+			t.Logf("Found file write task ID: %s", result.TaskID)
+		case "file-read-task":
+			fileReadTaskIDFound = true
+			t.Logf("Found file read task ID: %s", result.TaskID)
+		case "group-with-fileread":
+			groupTaskIDFound = true
+			t.Logf("Found group task ID: %s", result.TaskID)
+		}
+
+		// Check for content
+		if strings.Contains(result.Message, "Line") {
+			contentFound = true
+			t.Logf("Found content output in message: %s", result.Message)
 		}
 	}
-	assert.True(t, fileReadMessageFound, "Should have received messages from the file read task execution")
+
+	// Verify all expected task IDs were found
+	assert.True(t, fileWriteTaskIDFound, "Should have received messages with file-write-task ID")
+	assert.True(t, fileReadTaskIDFound, "Should have received messages with file-read-task ID")
+	assert.True(t, groupTaskIDFound, "Should have received messages with group-with-fileread ID")
 	assert.True(t, contentFound, "Should have received content output from the file read task")
 
 	// Verify the file was created
