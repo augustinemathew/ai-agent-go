@@ -24,15 +24,10 @@ func NewRequestUserInputExecutor() *RequestUserInputExecutor {
 // It expects the cmd argument to be of type *RequestUserInputTask.
 // The actual user interaction mechanism is assumed to be handled elsewhere;
 // this method just returns the prompt message.
-func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
+func (e *RequestUserInputExecutor) Execute(ctx context.Context, userInputCmd *Task) (<-chan OutputResult, error) {
 	// Type assertion to ensure we have a RequestUserInputTask command
-	userInputCmd, ok := cmd.(*Task)
-	if !ok {
-		return nil, fmt.Errorf(errUserInputInvalidCommandType, cmd)
-	}
-
 	if userInputCmd.Type != TaskRequestUserInput {
-		return nil, fmt.Errorf(errUserInputInvalidCommandType, cmd)
+		return nil, fmt.Errorf(errUserInputInvalidCommandType, userInputCmd)
 	}
 
 	// Check if task is already in a terminal state

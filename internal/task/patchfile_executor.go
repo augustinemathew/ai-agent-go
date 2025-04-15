@@ -428,21 +428,13 @@ func formatResult(cmd *Task, status TaskStatus, message string, err error) Outpu
 // --- Executor Methods ---
 
 // Execute applies a patch to the file specified in the PatchFileCommand.
-func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
+func (e *PatchFileExecutor) Execute(ctx context.Context, patchCmd *Task) (<-chan OutputResult, error) {
 	// Create a channel for results
 	results := make(chan OutputResult, 1)
 
 	// Validate command type
-	var patchCmd *Task
-	switch c := cmd.(type) {
-	case *Task:
-		patchCmd = c
-	default:
-		return nil, fmt.Errorf("invalid command type: expected *PatchFileTask, got %T", cmd)
-	}
-
 	if patchCmd.Type != TaskPatchFile {
-		return nil, fmt.Errorf("invalid command type: expected *PatchFileTask, got %T", cmd)
+		return nil, fmt.Errorf("invalid command type: expected *PatchFileTask, got %T", patchCmd)
 	}
 
 	// Check if task is already in a terminal state

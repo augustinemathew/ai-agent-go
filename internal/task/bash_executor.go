@@ -92,14 +92,10 @@ echo "---" >&2
 // 4. Wait for completion and process the final result
 //
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
-func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	bashCmd, ok := cmd.(*Task)
-	if !ok {
-		return nil, fmt.Errorf(errBashInvalidCommandType, cmd)
-	}
+func (e *BashExecExecutor) Execute(ctx context.Context, bashCmd *Task) (<-chan OutputResult, error) {
 
 	if bashCmd.Type != TaskBashExec {
-		return nil, fmt.Errorf(errBashInvalidCommandType, cmd)
+		return nil, fmt.Errorf(errBashInvalidCommandType, bashCmd)
 	}
 
 	// If the task is already in a terminal state, return it as is

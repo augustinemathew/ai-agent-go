@@ -11,7 +11,7 @@ type MockExecutor struct {
 	Executed bool
 }
 
-func (m *MockExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
+func (m *MockExecutor) Execute(ctx context.Context, cmd *Task) (<-chan OutputResult, error) {
 	m.Executed = true
 	results := make(chan OutputResult)
 	close(results) // Immediately close for simplicity in registry tests

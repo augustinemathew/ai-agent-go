@@ -42,13 +42,9 @@ func NewFileReadExecutor() *FileReadExecutor {
 // It expects the cmd argument to be of type *FileReadTask.
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 // The execution respects cancellation signals from the passed context.Context.
-func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	fileReadCmd, ok := cmd.(*Task)
-	if !ok {
-		return nil, fmt.Errorf(errInvalidCommandType, cmd)
-	}
+func (e *FileReadExecutor) Execute(ctx context.Context, fileReadCmd *Task) (<-chan OutputResult, error) {
 	if fileReadCmd.Type != TaskFileRead {
-		return nil, fmt.Errorf(errInvalidCommandType, cmd)
+		return nil, fmt.Errorf(errInvalidCommandType, fileReadCmd)
 	}
 
 	// If the task is already in a terminal state, return it as is

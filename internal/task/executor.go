@@ -17,7 +17,7 @@ type TaskExecutor interface {
 	// It returns a channel (`<-chan OutputResult`) through which execution status
 	// and results are reported asynchronously.
 	// An error is returned immediately if the command is invalid or cannot be started.
-	Execute(ctx context.Context, task any) (<-chan OutputResult, error)
+	Execute(ctx context.Context, task *Task) (<-chan OutputResult, error)
 }
 
 // HandleTerminalTask checks if a task is in a terminal state (SUCCEEDED or FAILED)

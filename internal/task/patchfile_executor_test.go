@@ -189,18 +189,11 @@ func TestPatchFileExecutor_Execute_Failure(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		cmd            any // Use any to test type errors
+		cmd            *Task // Use any to test type errors
 		expectedStatus TaskStatus
 		expectedError  string // Substring to check in result.Error or initial error
 		initialErr     bool   // Whether Execute itself should return an error
 	}{
-		{
-			name:           "Invalid Command Type",
-			cmd:            struct{ Foo string }{Foo: "bar"},
-			expectedStatus: "", // No result expected
-			expectedError:  "invalid command type",
-			initialErr:     true,
-		},
 		{
 			name: "Empty File Path",
 			cmd: NewPatchFileTask("fail-path-1", "Empty file path", PatchFileParameters{
