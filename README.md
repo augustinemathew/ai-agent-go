@@ -10,12 +10,15 @@ This repository contains the Go implementation of a task execution system for AI
 - **Context-Aware Execution**: All operations respect context cancellation for proper resource cleanup
 - **Concurrent Operation Safety**: File locking mechanisms prevent race conditions during concurrent operations
 - **Group Task Composition**: Powerful nested task grouping with status propagation
+- **Enhanced Child Task Traceability**: GroupExecutor forwards child task outputs with original task IDs preserved
 - **Extensible Architecture**: Easy to add new task types and executors
 
 ## Recent Improvements
 
 ### GroupExecutor Enhancements
 
+- **Child Task Output Forwarding**: Child task messages are forwarded with their original task IDs, providing complete execution traceability
+- **Dual Message Mode**: Both original child task messages and summarized group messages are forwarded
 - **Status Propagation**: Improved real-time visibility into task execution progress
 - **Pointer Type Consistency**: Fixed issues with task type handling to ensure all executors work with pointer types
 - **Nested Task Support**: Enhanced support for complex nested task hierarchies

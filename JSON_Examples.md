@@ -273,7 +273,7 @@ All tasks follow this basic structure:
 
 ```json
 {
-  "task_id": "group-1",
+  "task_id": "group-example",
   "description": "Group with two children",
   "type": "GROUP",
   "status": "",
@@ -284,76 +284,127 @@ All tasks follow this basic structure:
       "type": "FILE_WRITE",
       "status": "",
       "parameters": {
+        "working_directory": "",
         "file_path": "/path/to/child1.txt",
-        "content": "Content from child 1",
-        "working_directory": ""
+        "content": "Content from child 1"
       }
     },
     {
       "task_id": "child-2",
       "description": "Second child task",
-      "type": "FILE_WRITE",
+      "type": "FILE_READ",
       "status": "",
       "parameters": {
-        "file_path": "/path/to/child2.txt",
-        "content": "Content from child 2",
-        "working_directory": ""
+        "working_directory": "",
+        "file_path": "/path/to/input.txt"
       }
     }
   ]
 }
 ```
 
-### Intermediate Responses (Progress Updates)
+### Response Stream (Examples of messages from the result channel)
+
+The GroupExecutor now forwards both the original child task output messages (with their original task IDs) and group summary messages. Here's a sequence of messages you might receive when executing a group task:
 
 ```json
+// Initial group starting message
 {
-  "task_id": "group-1",
+  "task_id": "group-example",
   "status": "RUNNING",
   "message": "Starting execution of group task with 2 children"
 }
-```
 
-```json
+// From child-1 (original task ID preserved)
 {
-  "task_id": "group-1",
+  "task_id": "child-1",
+  "status": "SUCCEEDED",
+  "message": "File writing finished successfully to '/path/to/child1.txt' in 0s."
+}
+
+// Group task summary of child-1 completion
+{
+  "task_id": "group-example",
+  "status": "RUNNING",
+  "message": "Child task 1/2 [child-1]: File writing finished successfully to '/path/to/child1.txt' in 0s."
+}
+
+// Child task progress message
+{
+  "task_id": "group-example",
   "status": "RUNNING",
   "message": "Completed child task 1/2 (SUCCEEDED)"
 }
-```
 
-```json
+// From child-2 (original task ID preserved with file content)
 {
-  "task_id": "group-1",
+  "task_id": "child-2",
+  "status": "RUNNING",
+  "resultData": "Line 1 of file content"
+}
+
+// Group summary of child-2 content
+{
+  "task_id": "group-example",
+  "status": "RUNNING",
+  "message": "Child task 2/2 [child-2] output: Line 1 of file content"
+}
+
+// From child-2 (completion message with original task ID)
+{
+  "task_id": "child-2",
+  "status": "SUCCEEDED",
+  "message": "File reading finished successfully in 0s."
+}
+
+// Group summary of child-2 completion
+{
+  "task_id": "group-example",
+  "status": "RUNNING",
+  "message": "Child task 2/2 [child-2]: File reading finished successfully in 0s."
+}
+
+// Child task progress message
+{
+  "task_id": "group-example",
   "status": "RUNNING",
   "message": "Completed child task 2/2 (SUCCEEDED)"
 }
-```
 
-### Final Response
-
-```json
+// Final group completion message
 {
-  "task_id": "group-1",
+  "task_id": "group-example",
   "status": "SUCCEEDED",
-  "message": "Group task completed successfully with 2 child tasks in 0s"
+  "message": "Group task completed successfully with 2 child tasks in 5ms",
+  "resultData": "Content from child 1\nLine 1 of file content\n"
 }
 ```
+
+This enhanced output pattern allows clients to track:
+1. Original child task messages with their original task IDs
+2. Summaries of child task progress within the group context
+3. Overall group task progress
 
 ### Task After Execution
 
 ```json
 {
-  "task_id": "group-1",
+  "task_id": "group-example",
   "description": "Group with two children",
   "type": "GROUP",
   "status": "SUCCEEDED",
+  "output": {
+    "task_id": "group-example",
+    "status": "SUCCEEDED",
+    "message": "Group task completed successfully with 2 child tasks in 5ms",
+    "resultData": "Content from child 1\nLine 1 of file content\n"
+  },
   "children": [
     {
       "task_id": "child-1",
       "description": "First child task",
-      "status": "SUCCEEDED",
       "type": "FILE_WRITE",
+      "status": "SUCCEEDED",
       "output": {
         "task_id": "child-1",
         "status": "SUCCEEDED",
@@ -368,25 +419,20 @@ All tasks follow this basic structure:
     {
       "task_id": "child-2",
       "description": "Second child task",
+      "type": "FILE_READ",
       "status": "SUCCEEDED",
-      "type": "FILE_WRITE",
       "output": {
         "task_id": "child-2",
         "status": "SUCCEEDED",
-        "message": "File writing finished successfully to '/path/to/child2.txt' in 0s."
+        "message": "File reading finished successfully in 0s.",
+        "resultData": "Line 1 of file content\n"
       },
       "parameters": {
         "working_directory": "",
-        "file_path": "/path/to/child2.txt",
-        "content": "Content from child 2"
+        "file_path": "/path/to/input.txt"
       }
     }
-  ],
-  "output": {
-    "task_id": "group-1",
-    "status": "SUCCEEDED",
-    "message": "Group task completed successfully with 2 child tasks in 0s"
-  }
+  ]
 }
 ```
 
@@ -539,4 +585,5 @@ if parsedTask.Type == task.TaskFileRead {
 }
 ```
 
+The JSON serialization and deserialization automatically handles the dynamic Parameters field based on the task's Type. This makes it easy to transfer tasks between different parts of the system or store them in a database. 
 The JSON serialization and deserialization automatically handles the dynamic Parameters field based on the task's Type. This makes it easy to transfer tasks between different parts of the system or store them in a database. 

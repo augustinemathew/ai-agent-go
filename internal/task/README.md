@@ -4,6 +4,7 @@ This package defines and executes various tasks asynchronously within the AI age
 
 ## Recent Updates
 
+- **Enhanced GroupExecutor Child Task Output Forwarding**: GroupExecutor now forwards output messages from child tasks with their original task IDs preserved, providing improved visibility and traceability of individual task execution.
 - **Improved GroupExecutor Status Propagation**: Enhanced status updates from child tasks to parent group tasks, providing real-time visibility into execution progress.
 - **Race Condition Prevention**: Implemented file locking mechanism in the PatchFileExecutor to safely handle concurrent operations on the same files.
 - **Pointer Type Consistency**: Fixed issues with task type handling to ensure all executors consistently work with pointer types rather than value types.
@@ -15,6 +16,21 @@ This package defines and executes various tasks asynchronously within the AI age
 - **JSON Marshaling/Unmarshaling**: Implemented custom JSON serialization and deserialization for tasks with support for type-based parameter handling.
 
 ## Architectural Improvements
+
+### Child Task Output Forwarding in GroupExecutor
+
+The GroupExecutor now provides enhanced visibility of child task execution:
+
+1. **Preserved Task IDs**: Child task output messages retain their original task IDs, enabling clients to track individual tasks.
+2. **Dual Message Mode**: Both the original child task message and a summarized group task message are forwarded.
+3. **Real-time Content Updates**: For tasks like FileRead and BashExec, the content from each child task is included in forwarded messages.
+4. **Complete Execution Tracing**: Every stage of task execution is visible in the result stream.
+
+This improvement makes it easier to:
+- Track which specific child task is executing
+- See intermediate results from long-running tasks
+- Monitor system behavior more effectively
+- Maintain proper correlation between task outputs and their source tasks
 
 ### Simplified Executor Design
 
