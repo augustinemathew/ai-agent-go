@@ -64,17 +64,10 @@ The [Examples.md](Examples.md) file contains complete JSON examples showing:
 registry := task.NewMapRegistry()
 
 // Create a task
-fileWriteTask := &task.Task{
-    BaseTask: task.BaseTask{
-        TaskId:      "write-example",
-        Description: "Write to test file",
-        Type:        task.TaskFileWrite,
-    },
-    Parameters: task.FileWriteParameters{
-        FilePath: "/path/to/test.txt",
-        Content:  "Hello, World!",
-    },
-}
+fileWriteTask := task.NewFileWriteTask("write-example", "Write to test file", task.FileWriteParameters{
+    FilePath: "/path/to/test.txt",
+    Content:  "Hello, World!",
+})
 
 // Get the appropriate executor
 executor, err := registry.GetExecutor(task.TaskFileWrite)
@@ -98,37 +91,20 @@ fmt.Printf("Task completed with status: %s\n", finalResult.Status)
 
 ```go
 // Create a group task with two child tasks
-groupTask := &task.Task{
-    BaseTask: task.BaseTask{
-        TaskId:      "group-example",
-        Description: "Group with multiple children",
-        Type:        task.TaskGroup,
-        Children: []*task.Task{
-            {
-                BaseTask: task.BaseTask{
-                    TaskId:      "child-1",
-                    Description: "First child task",
-                    Type:        task.TaskFileWrite,
-                },
-                Parameters: task.FileWriteParameters{
-                    FilePath: "/path/to/file1.txt",
-                    Content:  "Content for file 1",
-                },
-            },
-            {
-                BaseTask: task.BaseTask{
-                    TaskId:      "child-2",
-                    Description: "Second child task",
-                    Type:        task.TaskFileWrite,
-                },
-                Parameters: task.FileWriteParameters{
-                    FilePath: "/path/to/file2.txt",
-                    Content:  "Content for file 2",
-                },
-            },
-        },
+groupTask := task.NewGroupTask(
+    "group-example",
+    "Group with multiple children",
+    []*task.Task{
+        task.NewFileWriteTask("child-1", "First child task", task.FileWriteParameters{
+            FilePath: "/path/to/file1.txt",
+            Content:  "Content for file 1",
+        }),
+        task.NewFileWriteTask("child-2", "Second child task", task.FileWriteParameters{
+            FilePath: "/path/to/file2.txt",
+            Content:  "Content for file 2",
+        }),
     },
-}
+)
 
 // Execute the group task
 executor, _ := registry.GetExecutor(task.TaskGroup)

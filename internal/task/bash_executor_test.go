@@ -65,12 +65,9 @@ func TestBashExecExecutor_Execute_Success_Streaming(t *testing.T) {
 	wd, _ := os.Getwd()
 	expectedCmdOutput := "Hello Executor!\n"
 	testCmd := fmt.Sprintf("echo '%s' && pwd", strings.TrimSpace(expectedCmdOutput)) // pwd output goes to stdout
-	cmd := &BashExecTask{
-		BaseTask: BaseTask{TaskId: "test-success-stream-1"},
-		Parameters: BashExecParameters{
-			Command: testCmd,
-		},
-	}
+	cmd := NewBashExecTask("test-success-stream-1", "Test success streaming", BashExecParameters{
+		Command: testCmd,
+	})
 	// Define the expected CWD temp file path
 	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
@@ -114,12 +111,9 @@ func TestBashExecExecutor_Execute_Failure_Streaming(t *testing.T) {
 	wd, _ := os.Getwd() // Get current WD to check the file content
 	expectedCmdOutput := "Going to fail\n"
 	testCmd := fmt.Sprintf("echo '%s' && exit 123", strings.TrimSpace(expectedCmdOutput))
-	cmd := &BashExecTask{
-		BaseTask: BaseTask{TaskId: "test-fail-stream-1"},
-		Parameters: BashExecParameters{
-			Command: testCmd,
-		},
-	}
+	cmd := NewBashExecTask("test-fail-stream-1", "Test failure streaming", BashExecParameters{
+		Command: testCmd,
+	})
 	// Define the expected CWD temp file path
 	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
@@ -162,12 +156,9 @@ func TestBashExecExecutor_Execute_CombinedOutput_Streaming(t *testing.T) {
 	expectedStdout := "Output to stdout\n"
 	expectedStderr := "Error to stderr\n"
 	testCmd := fmt.Sprintf("echo '%s' >&1 && echo '%s' >&2", strings.TrimSpace(expectedStdout), strings.TrimSpace(expectedStderr))
-	cmd := &BashExecTask{
-		BaseTask: BaseTask{TaskId: "test-combined-stream-1"},
-		Parameters: BashExecParameters{
-			Command: testCmd,
-		},
-	}
+	cmd := NewBashExecTask("test-combined-stream-1", "Test combined output streaming", BashExecParameters{
+		Command: testCmd,
+	})
 	// Define the expected CWD temp file path
 	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
@@ -207,12 +198,9 @@ func TestBashExecExecutor_Execute_ChangeDirectory_Streaming(t *testing.T) {
 	expectedCmdOutput := "Changed directory\n"
 	expectedFinalWd := "/private/tmp" // Expected final path on macOS, adjust if needed for other OS
 	testCmd := fmt.Sprintf("cd %s && echo '%s'", expectedFinalWd, strings.TrimSpace(expectedCmdOutput))
-	cmd := &BashExecTask{
-		BaseTask: BaseTask{TaskId: "test-cd-stream-1"},
-		Parameters: BashExecParameters{
-			Command: testCmd,
-		},
-	}
+	cmd := NewBashExecTask("test-cd-stream-1", "Test change directory streaming", BashExecParameters{
+		Command: testCmd,
+	})
 	// Define the expected CWD temp file path
 	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
@@ -254,12 +242,9 @@ func TestBashExecExecutor_Execute_Timeout_Streaming(t *testing.T) {
 	const testTimeout = 100 * time.Millisecond
 	executor := NewBashExecExecutor()
 	testCmd := "echo 'Starting sleep...' && sleep 1 && echo 'Finished sleep'"
-	cmd := &BashExecTask{
-		BaseTask: BaseTask{TaskId: "test-timeout-stream-1"},
-		Parameters: BashExecParameters{
-			Command: testCmd,
-		},
-	}
+	cmd := NewBashExecTask("test-timeout-stream-1", "Test timeout streaming", BashExecParameters{
+		Command: testCmd,
+	})
 	// Define the expected CWD temp file path
 	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
@@ -313,12 +298,9 @@ func TestBashExecExecutor_Execute_Cancellation_Streaming(t *testing.T) {
 	executor := NewBashExecExecutor()
 	// Command that would run for a while (reduced sleep time)
 	testCmd := "echo 'Starting long process...' && sleep 1 && echo 'Finished long process'"
-	cmd := &BashExecTask{
-		BaseTask: BaseTask{TaskId: "test-cancel-stream-1"},
-		Parameters: BashExecParameters{
-			Command: testCmd,
-		},
-	}
+	cmd := NewBashExecTask("test-cancel-stream-1", "Test cancellation streaming", BashExecParameters{
+		Command: testCmd,
+	})
 	// Define the expected CWD temp file path
 	expectedCwdFilePath := fmt.Sprintf("/tmp/%s.cwd", cmd.TaskId)
 	// Clean up before test, just in case
@@ -350,12 +332,9 @@ func TestBashExecExecutor_Execute_Cancellation_Streaming(t *testing.T) {
 func TestBashExecExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewBashExecExecutor()
 	// Create a command of the wrong type
-	cmd := &FileReadTask{
-		BaseTask: BaseTask{TaskId: "invalid-type-stream-1"},
-		Parameters: FileReadParameters{
-			FilePath: "/some/file",
-		},
-	}
+	cmd := NewFileReadTask("invalid-type-stream-1", "Invalid command type", FileReadParameters{
+		FilePath: "/some/file",
+	})
 
 	// Pass context, although it won't be used here as error is immediate
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -368,15 +347,9 @@ func TestBashExecExecutor_Execute_InvalidCommandType(t *testing.T) {
 func TestBashExecExecutor_CreateErrorResult(t *testing.T) {
 	executor := NewBashExecExecutor()
 
-	cmd := &BashExecTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-error",
-			Description: "Test error result",
-		},
-		Parameters: BashExecParameters{
-			Command: "echo 'test'",
-		},
-	}
+	cmd := NewBashExecTask("test-error", "Test error result", BashExecParameters{
+		Command: "echo 'test'",
+	})
 
 	tests := []struct {
 		name          string
@@ -441,20 +414,14 @@ func TestBashExecExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := &BashExecTask{
-				BaseTask: BaseTask{
-					TaskId:      "terminal-bash-test",
-					Description: "Terminal bash task test",
-					Status:      tc.status,
-					Output: OutputResult{
-						TaskID:  "terminal-bash-test",
-						Status:  tc.status,
-						Message: "Pre-existing terminal state",
-					},
-				},
-				Parameters: BashExecParameters{
-					Command: "echo 'This should not execute'",
-				},
+			cmd := NewBashExecTask("terminal-bash-test", "Terminal bash task test", BashExecParameters{
+				Command: "echo 'This should not execute'",
+			})
+			cmd.Status = tc.status
+			cmd.Output = OutputResult{
+				TaskID:  "terminal-bash-test",
+				Status:  tc.status,
+				Message: "Pre-existing terminal state",
 			}
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)

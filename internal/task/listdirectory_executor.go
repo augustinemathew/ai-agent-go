@@ -22,8 +22,12 @@ func NewListDirectoryExecutor() *ListDirectoryExecutor {
 // It expects the cmd argument to be of type ListDirectoryCommand.
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	listCmd, ok := cmd.(*ListDirectoryTask)
+	listCmd, ok := cmd.(*Task)
 	if !ok {
+		return nil, fmt.Errorf("invalid command type: expected *ListDirectoryTask, got %T", cmd)
+	}
+
+	if listCmd.Type != TaskListDirectory {
 		return nil, fmt.Errorf("invalid command type: expected *ListDirectoryTask, got %T", cmd)
 	}
 
@@ -78,7 +82,7 @@ func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan Ou
 			} else {
 				finalStatus = StatusSucceeded
 				errMsg = ""
-				message = fmt.Sprintf("Successfully listed directory '%s' in %v.", listCmd.Parameters.Path, duration.Round(time.Millisecond))
+				message = fmt.Sprintf("Successfully listed directory '%s' in %v.", listCmd.Parameters.(ListDirectoryParameters).Path, duration.Round(time.Millisecond))
 			}
 
 			// Send final result
@@ -101,9 +105,9 @@ func (e *ListDirectoryExecutor) Execute(ctx context.Context, cmd any) (<-chan Ou
 		}
 
 		// Get absolute path
-		absPath, err := filepath.Abs(listCmd.Parameters.Path)
+		absPath, err := filepath.Abs(listCmd.Parameters.(ListDirectoryParameters).Path)
 		if err != nil {
-			finalErr = fmt.Errorf("failed to get absolute path for '%s': %w", listCmd.Parameters.Path, err)
+			finalErr = fmt.Errorf("failed to get absolute path for '%s': %w", listCmd.Parameters.(ListDirectoryParameters).Path, err)
 			return
 		}
 

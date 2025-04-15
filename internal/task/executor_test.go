@@ -64,13 +64,10 @@ func TestBasicExecutorExecution(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFile := filepath.Join(tempDir, "executor_test_empty_write.txt")
 
-	cmd := &task.FileWriteTask{
-		BaseTask: task.BaseTask{TaskId: "exec-test-1"},
-		Parameters: task.FileWriteParameters{
-			FilePath: tempFile,
-			Content:  "", // Empty content
-		},
-	}
+	cmd := task.NewFileWriteTask("exec-test-1", "Test File Write", task.FileWriteParameters{
+		FilePath: tempFile,
+		Content:  "", // Empty content
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

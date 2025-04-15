@@ -30,13 +30,7 @@ func (e *GroupExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResu
 	var taskStatus TaskStatus
 	var taskOutput OutputResult
 
-	// Handle *GroupTask and *Task types only
 	switch v := cmd.(type) {
-	case *GroupTask:
-		children = v.Children
-		taskId = v.TaskId
-		taskStatus = v.Status
-		taskOutput = v.Output
 	case *Task:
 		if v.Type != TaskGroup {
 			return nil, fmt.Errorf("invalid task type: expected TaskGroup, got %s", v.Type)
@@ -46,7 +40,7 @@ func (e *GroupExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResu
 		taskStatus = v.Status
 		taskOutput = v.Output
 	default:
-		return nil, fmt.Errorf("invalid command type: expected *GroupTask or *Task, got %T", cmd)
+		return nil, fmt.Errorf("invalid command type: expected *Task, got %T", cmd)
 	}
 
 	// If the task is already in a terminal state, return it as is
@@ -197,85 +191,37 @@ func (e *GroupExecutor) processChildTask(ctx context.Context, childTask *Task) O
 	switch childTask.Type {
 	case TaskFileWrite:
 		if params, ok := childTask.Parameters.(FileWriteParameters); ok {
-			concreteTask = &FileWriteTask{
-				BaseTask: BaseTask{
-					TaskId:      childTask.TaskId,
-					Description: childTask.Description,
-					Status:      taskStatus,
-					Type:        childTask.Type,
-				},
-				Parameters: params,
-			}
+			concreteTask = NewFileWriteTask(childTask.TaskId, childTask.Description, params)
 		} else {
 			executeErr = fmt.Errorf("invalid parameters for FileWriteCommand: %T", childTask.Parameters)
 		}
 	case TaskFileRead:
 		if params, ok := childTask.Parameters.(FileReadParameters); ok {
-			concreteTask = &FileReadTask{
-				BaseTask: BaseTask{
-					TaskId:      childTask.TaskId,
-					Description: childTask.Description,
-					Status:      taskStatus,
-					Type:        childTask.Type,
-				},
-				Parameters: params,
-			}
+			concreteTask = NewFileReadTask(childTask.TaskId, childTask.Description, params)
 		} else {
 			executeErr = fmt.Errorf("invalid parameters for FileReadTask: %T", childTask.Parameters)
 		}
 	case TaskBashExec:
 		if params, ok := childTask.Parameters.(BashExecParameters); ok {
-			concreteTask = &BashExecTask{
-				BaseTask: BaseTask{
-					TaskId:      childTask.TaskId,
-					Description: childTask.Description,
-					Status:      taskStatus,
-					Type:        childTask.Type,
-				},
-				Parameters: params,
-			}
+			concreteTask = NewBashExecTask(childTask.TaskId, childTask.Description, params)
 		} else {
 			executeErr = fmt.Errorf("invalid parameters for BashExecTask: %T", childTask.Parameters)
 		}
 	case TaskPatchFile:
 		if params, ok := childTask.Parameters.(PatchFileParameters); ok {
-			concreteTask = &PatchFileTask{
-				BaseTask: BaseTask{
-					TaskId:      childTask.TaskId,
-					Description: childTask.Description,
-					Status:      taskStatus,
-					Type:        childTask.Type,
-				},
-				Parameters: params,
-			}
+			concreteTask = NewPatchFileTask(childTask.TaskId, childTask.Description, params)
 		} else {
 			executeErr = fmt.Errorf("invalid parameters for PatchFileCommand: %T", childTask.Parameters)
 		}
 	case TaskListDirectory:
 		if params, ok := childTask.Parameters.(ListDirectoryParameters); ok {
-			concreteTask = &ListDirectoryTask{
-				BaseTask: BaseTask{
-					TaskId:      childTask.TaskId,
-					Description: childTask.Description,
-					Status:      taskStatus,
-					Type:        childTask.Type,
-				},
-				Parameters: params,
-			}
+			concreteTask = NewListDirectoryTask(childTask.TaskId, childTask.Description, params)
 		} else {
 			executeErr = fmt.Errorf("invalid parameters for ListDirectoryCommand: %T", childTask.Parameters)
 		}
 	case TaskRequestUserInput:
 		if params, ok := childTask.Parameters.(RequestUserInputParameters); ok {
-			concreteTask = &RequestUserInputTask{
-				BaseTask: BaseTask{
-					TaskId:      childTask.TaskId,
-					Description: childTask.Description,
-					Status:      taskStatus,
-					Type:        childTask.Type,
-				},
-				Parameters: params,
-			}
+			concreteTask = NewRequestUserInputTask(childTask.TaskId, childTask.Description, params)
 		} else {
 			executeErr = fmt.Errorf("invalid parameters for RequestUserInput: %T", childTask.Parameters)
 		}

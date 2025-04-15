@@ -93,8 +93,12 @@ echo "---" >&2
 //
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	bashCmd, ok := cmd.(*BashExecTask)
+	bashCmd, ok := cmd.(*Task)
 	if !ok {
+		return nil, fmt.Errorf(errBashInvalidCommandType, cmd)
+	}
+
+	if bashCmd.Type != TaskBashExec {
 		return nil, fmt.Errorf(errBashInvalidCommandType, cmd)
 	}
 
@@ -173,9 +177,9 @@ func (e *BashExecExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 // setupCommand prepares the exec.Command for execution with the bash script.
 // It configures stdout and stderr pipes and returns the command, a combined reader for
 // stdout and stderr, and any error that occurred during setup.
-func setupCommand(ctx context.Context, bashCmd *BashExecTask) (*exec.Cmd, io.Reader, error) {
+func setupCommand(ctx context.Context, bashCmd *Task) (*exec.Cmd, io.Reader, error) {
 	// Construct the full script
-	fullScript := fmt.Sprintf(bashScriptTemplate, bashCmd.TaskId, bashCmd.Parameters.Command)
+	fullScript := fmt.Sprintf(bashScriptTemplate, bashCmd.TaskId, bashCmd.Parameters.(BashExecParameters).Command)
 
 	// Prepare command for streaming using the execution context
 	execCmd := exec.CommandContext(ctx, "/bin/bash", "-c", fullScript)
@@ -199,7 +203,7 @@ func setupCommand(ctx context.Context, bashCmd *BashExecTask) (*exec.Cmd, io.Rea
 // streamCommandOutput reads from the provided reader and sends each line to the results channel.
 // The function respects context cancellation and reports errors appropriately.
 // It uses the provided WaitGroup to signal when all output has been processed.
-func streamCommandOutput(ctx context.Context, reader io.Reader, cmd *BashExecTask,
+func streamCommandOutput(ctx context.Context, reader io.Reader, cmd *Task,
 	results chan<- OutputResult, wg *sync.WaitGroup) {
 
 	wg.Add(1)
@@ -236,7 +240,7 @@ func streamCommandOutput(ctx context.Context, reader io.Reader, cmd *BashExecTas
 // an appropriate OutputResult. It handles various error conditions including timeouts,
 // cancellations, and command execution failures.
 // It also attempts to read the final working directory from the temporary file.
-func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd *BashExecTask,
+func processFinalResult(ctx context.Context, cmd *exec.Cmd, bashCmd *Task,
 	waitErr error, duration time.Duration, timeout time.Duration) OutputResult {
 
 	finalStatus := StatusSucceeded // Assume success initially
@@ -304,7 +308,7 @@ func waitGroupWithContext(ctx context.Context, wg *sync.WaitGroup) error {
 }
 
 // createErrorResult creates a standardized error OutputResult for a BashExecCommand.
-func createErrorResult(cmd *BashExecTask, errMsg string) OutputResult {
+func createErrorResult(cmd *Task, errMsg string) OutputResult {
 	return OutputResult{
 		TaskID:  cmd.TaskId,
 		Status:  StatusFailed,
@@ -315,7 +319,7 @@ func createErrorResult(cmd *BashExecTask, errMsg string) OutputResult {
 
 // CreateErrorResult creates an error result for a failed command execution.
 // This is a method on BashExecExecutor to satisfy potential interface requirements.
-func (e *BashExecExecutor) CreateErrorResult(cmd *BashExecTask, err error) OutputResult {
+func (e *BashExecExecutor) CreateErrorResult(cmd *Task, err error) OutputResult {
 	var errMsg string
 	if err != nil {
 		errMsg = err.Error()

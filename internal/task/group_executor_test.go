@@ -50,14 +50,7 @@ func TestGroupExecutor_Execute_Success(t *testing.T) {
 	}
 
 	// Create the group task
-	groupTask := &task.GroupTask{
-		BaseTask: task.BaseTask{
-			TaskId:      "group-1",
-			Description: "Group with two children",
-			Type:        task.TaskGroup,
-			Children:    []*task.Task{child1, child2},
-		},
-	}
+	groupTask := task.NewGroupTask("group-1", "Group with two children", []*task.Task{child1, child2})
 
 	// Execute the group task
 	executor, err := registry.GetExecutor(task.TaskGroup)
@@ -133,14 +126,7 @@ func TestGroupExecutor_Execute_PartialFailure(t *testing.T) {
 	}
 
 	// Create the group task
-	groupTask := &task.GroupTask{
-		BaseTask: task.BaseTask{
-			TaskId:      "group-partial-fail",
-			Description: "Group with mixed success/failure",
-			Type:        task.TaskGroup,
-			Children:    []*task.Task{&child1, &child2},
-		},
-	}
+	groupTask := task.NewGroupTask("group-partial-fail", "Group with mixed success/failure", []*task.Task{&child1, &child2})
 
 	// Execute the group task
 	executor, err := registry.GetExecutor(task.TaskGroup)
@@ -225,14 +211,7 @@ func TestGroupExecutor_Execute_NestedGroups(t *testing.T) {
 	}
 
 	// Outer group containing middle group and middle sibling
-	outerGroup := &task.GroupTask{
-		BaseTask: task.BaseTask{
-			TaskId:      "outer-group",
-			Description: "Outer group task",
-			Type:        task.TaskGroup,
-			Children:    []*task.Task{&middleGroup, &middleSibling},
-		},
-	}
+	outerGroup := task.NewGroupTask("outer-group", "Outer group task", []*task.Task{&middleGroup, &middleSibling})
 
 	// Execute the outer group task
 	executor, err := registry.GetExecutor(task.TaskGroup)
@@ -299,19 +278,12 @@ func TestGroupExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 			}
 
 			// Create a task that's already in a terminal state
-			groupTask := &task.GroupTask{
-				BaseTask: task.BaseTask{
-					TaskId:      "terminal-group-test",
-					Description: "Terminal group task test",
-					Type:        task.TaskGroup,
-					Status:      tc.status,
-					Output: task.OutputResult{
-						TaskID:  "terminal-group-test",
-						Status:  tc.status,
-						Message: "Pre-existing terminal state",
-					},
-					Children: []*task.Task{&childTask},
-				},
+			groupTask := task.NewGroupTask("terminal-group-test", "Terminal group task test", []*task.Task{&childTask})
+			groupTask.Status = tc.status
+			groupTask.Output = task.OutputResult{
+				TaskID:  "terminal-group-test",
+				Status:  tc.status,
+				Message: "Pre-existing terminal state",
 			}
 
 			resultsChan, err := executor.Execute(context.Background(), groupTask)
@@ -345,15 +317,9 @@ func verifyFileContent(t *testing.T, filePath, expectedContent string) {
 	t.Helper()
 
 	// Create a file read task to check the content
-	readTask := &task.FileReadTask{
-		BaseTask: task.BaseTask{
-			TaskId: "read-verify",
-			Type:   task.TaskFileRead,
-		},
-		Parameters: task.FileReadParameters{
-			FilePath: filePath,
-		},
-	}
+	readTask := task.NewFileReadTask("read-verify", "Read verify", task.FileReadParameters{
+		FilePath: filePath,
+	})
 
 	// Get file read executor
 	registry := task.NewMapRegistry()
@@ -429,14 +395,7 @@ func TestGroupExecutor_ChildTaskStatusUpdates(t *testing.T) {
 	}
 
 	// Create the group task
-	groupTask := &task.GroupTask{
-		BaseTask: task.BaseTask{
-			TaskId:      "group-1",
-			Description: "Group with two children",
-			Type:        task.TaskGroup,
-			Children:    []*task.Task{child1, child2},
-		},
-	}
+	groupTask := task.NewGroupTask("group-1", "Group with two children", []*task.Task{child1, child2})
 
 	// Execute the group task
 	executor, err := registry.GetExecutor(task.TaskGroup)

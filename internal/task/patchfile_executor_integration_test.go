@@ -22,13 +22,10 @@ func TestFullPatchWorkflow(t *testing.T) {
 	// Test creating a new file
 	t.Run("Create New File", func(t *testing.T) {
 		filePath := filepath.Join(dir, "new_file.txt")
-		cmd := &PatchFileTask{
-			BaseTask: BaseTask{TaskId: "create-1"},
-			Parameters: PatchFileParameters{
-				FilePath: filePath,
-				Patch:    "--- /dev/null\n+++ b/new_file.txt\n@@ -0,0 +1,2 @@\n+Line 1\n+Line 2\n",
-			},
-		}
+		cmd := NewPatchFileTask("create-1", "Create new file", PatchFileParameters{
+			FilePath: filePath,
+			Patch:    "--- /dev/null\n+++ b/new_file.txt\n@@ -0,0 +1,2 @@\n+Line 1\n+Line 2\n",
+		})
 
 		resultsChan, err := executor.Execute(context.Background(), cmd)
 		require.NoError(t, err)
@@ -47,13 +44,10 @@ func TestFullPatchWorkflow(t *testing.T) {
 		initialContent := "Line 1\nLine 2\nLine 3\n"
 		createPatchTestTempFile(t, dir, "existing_file.txt", initialContent)
 
-		cmd := &PatchFileTask{
-			BaseTask: BaseTask{TaskId: "modify-1"},
-			Parameters: PatchFileParameters{
-				FilePath: filePath,
-				Patch:    "--- a/existing_file.txt\n+++ b/existing_file.txt\n@@ -1,3 +1,4 @@\n Line 1\n Line 2\n+New Line\n Line 3\n",
-			},
-		}
+		cmd := NewPatchFileTask("modify-1", "Modify existing file", PatchFileParameters{
+			FilePath: filePath,
+			Patch:    "--- a/existing_file.txt\n+++ b/existing_file.txt\n@@ -1,3 +1,4 @@\n Line 1\n Line 2\n+New Line\n Line 3\n",
+		})
 
 		resultsChan, err := executor.Execute(context.Background(), cmd)
 		require.NoError(t, err)
@@ -77,13 +71,10 @@ func TestErrorHandlingScenarios(t *testing.T) {
 		filePath := filepath.Join(dir, "invalid_patch.txt")
 		createPatchTestTempFile(t, dir, "invalid_patch.txt", "content")
 
-		cmd := &PatchFileTask{
-			BaseTask: BaseTask{TaskId: "invalid-1"},
-			Parameters: PatchFileParameters{
-				FilePath: filePath,
-				Patch:    "invalid patch format",
-			},
-		}
+		cmd := NewPatchFileTask("invalid-1", "Invalid patch format", PatchFileParameters{
+			FilePath: filePath,
+			Patch:    "invalid patch format",
+		})
 
 		resultsChan, err := executor.Execute(context.Background(), cmd)
 		require.NoError(t, err)
@@ -101,13 +92,10 @@ func TestErrorHandlingScenarios(t *testing.T) {
 		require.NoError(t, os.Chmod(filePath, 0444))
 		defer os.Chmod(filePath, 0644)
 
-		cmd := &PatchFileTask{
-			BaseTask: BaseTask{TaskId: "perm-1"},
-			Parameters: PatchFileParameters{
-				FilePath: filePath,
-				Patch:    "--- a/readonly.txt\n+++ b/readonly.txt\n@@ -1,1 +1,1 @@\n-content\n+new content\n",
-			},
-		}
+		cmd := NewPatchFileTask("perm-1", "Permission error", PatchFileParameters{
+			FilePath: filePath,
+			Patch:    "--- a/readonly.txt\n+++ b/readonly.txt\n@@ -1,1 +1,1 @@\n-content\n+new content\n",
+		})
 
 		resultsChan, err := executor.Execute(context.Background(), cmd)
 		require.NoError(t, err)
@@ -136,13 +124,10 @@ func TestConcurrentPatchOperations(t *testing.T) {
 				filePath := filepath.Join(dir, fmt.Sprintf("concurrent_%d.txt", i))
 				createPatchTestTempFile(t, dir, fmt.Sprintf("concurrent_%d.txt", i), "content")
 
-				cmd := &PatchFileTask{
-					BaseTask: BaseTask{TaskId: fmt.Sprintf("concurrent-%d", i)},
-					Parameters: PatchFileParameters{
-						FilePath: filePath,
-						Patch:    fmt.Sprintf("--- a/concurrent_%d.txt\n+++ b/concurrent_%d.txt\n@@ -1,1 +1,1 @@\n-content\n+new content %d\n", i, i, i),
-					},
-				}
+				cmd := NewPatchFileTask(fmt.Sprintf("concurrent-%d", i), "Concurrent patch", PatchFileParameters{
+					FilePath: filePath,
+					Patch:    fmt.Sprintf("--- a/concurrent_%d.txt\n+++ b/concurrent_%d.txt\n@@ -1,1 +1,1 @@\n-content\n+new content %d\n", i, i, i),
+				})
 
 				resultsChan, err := executor.Execute(context.Background(), cmd)
 				require.NoError(t, err)
@@ -171,13 +156,10 @@ func TestConcurrentPatchOperations(t *testing.T) {
 		for i := 0; i < numPatches; i++ {
 			go func(i int) {
 				defer wg.Done()
-				cmd := &PatchFileTask{
-					BaseTask: BaseTask{TaskId: fmt.Sprintf("concurrent-same-%d", i)},
-					Parameters: PatchFileParameters{
-						FilePath: filePath,
-						Patch:    fmt.Sprintf("--- a/concurrent_same.txt\n+++ b/concurrent_same.txt\n@@ -1,1 +1,1 @@\n-content\n+new content %d\n", i),
-					},
-				}
+				cmd := NewPatchFileTask(fmt.Sprintf("concurrent-same-%d", i), "Concurrent patch", PatchFileParameters{
+					FilePath: filePath,
+					Patch:    fmt.Sprintf("--- a/concurrent_same.txt\n+++ b/concurrent_same.txt\n@@ -1,1 +1,1 @@\n-content\n+new content %d\n", i),
+				})
 
 				resultsChan, err := executor.Execute(context.Background(), cmd)
 				require.NoError(t, err)

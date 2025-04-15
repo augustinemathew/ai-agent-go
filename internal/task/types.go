@@ -1,5 +1,9 @@
 package task
 
+import (
+	"encoding/json"
+)
+
 // TaskType represents the specific kind of command/step.
 // It defines the action to be performed by the executor.
 type TaskType string
@@ -89,9 +93,11 @@ type BashExecParameters struct {
 }
 
 // BashExecTask defines the structure for executing a bash command.
-type BashExecTask struct {
-	BaseTask
-	Parameters BashExecParameters `json:"parameters"`
+func NewBashExecTask(taskId string, description string, parameters BashExecParameters) *Task {
+	return &Task{
+		BaseTask:   BaseTask{TaskId: taskId, Type: TaskBashExec, Description: description},
+		Parameters: parameters,
+	}
 }
 
 type FileReadParameters struct {
@@ -101,10 +107,11 @@ type FileReadParameters struct {
 	EndLine   int    `json:"end_line,omitempty"`
 }
 
-// FileReadTask defines the structure for reading a file.
-type FileReadTask struct {
-	BaseTask
-	Parameters FileReadParameters `json:"parameters"`
+func NewFileReadTask(taskId string, description string, parameters FileReadParameters) *Task {
+	return &Task{
+		BaseTask:   BaseTask{TaskId: taskId, Type: TaskFileRead, Description: description},
+		Parameters: parameters,
+	}
 }
 
 type FileWriteParameters struct {
@@ -114,10 +121,11 @@ type FileWriteParameters struct {
 	Overwrite bool   `json:"overwrite,omitempty"`
 }
 
-// FileWriteTask defines the structure for writing content to a file.
-type FileWriteTask struct {
-	BaseTask
-	Parameters FileWriteParameters `json:"parameters"`
+func NewFileWriteTask(taskId string, description string, parameters FileWriteParameters) *Task {
+	return &Task{
+		BaseTask:   BaseTask{TaskId: taskId, Type: TaskFileWrite, Description: description},
+		Parameters: parameters,
+	}
 }
 
 type PatchFileParameters struct {
@@ -127,9 +135,11 @@ type PatchFileParameters struct {
 }
 
 // PatchFileTask defines the structure for applying a patch to a file.
-type PatchFileTask struct {
-	BaseTask
-	Parameters PatchFileParameters `json:"parameters"`
+func NewPatchFileTask(taskId string, description string, parameters PatchFileParameters) *Task {
+	return &Task{
+		BaseTask:   BaseTask{TaskId: taskId, Type: TaskPatchFile, Description: description},
+		Parameters: parameters,
+	}
 }
 
 type ListDirectoryParameters struct {
@@ -138,9 +148,11 @@ type ListDirectoryParameters struct {
 }
 
 // ListDirectoryTask defines the structure for listing directory contents.
-type ListDirectoryTask struct {
-	BaseTask
-	Parameters ListDirectoryParameters `json:"parameters"`
+func NewListDirectoryTask(taskId string, description string, parameters ListDirectoryParameters) *Task {
+	return &Task{
+		BaseTask:   BaseTask{TaskId: taskId, Type: TaskListDirectory, Description: description},
+		Parameters: parameters,
+	}
 }
 
 type RequestUserInputParameters struct {
@@ -148,16 +160,23 @@ type RequestUserInputParameters struct {
 	Prompt string `json:"prompt"`
 }
 
-// RequestUserInputTask defines the structure for requesting input from the user.
-type RequestUserInputTask struct {
-	BaseTask
-	Parameters RequestUserInputParameters `json:"parameters"`
+func NewRequestUserInputTask(taskId string, description string, parameters RequestUserInputParameters) *Task {
+	return &Task{
+		BaseTask:   BaseTask{TaskId: taskId, Type: TaskRequestUserInput, Description: description},
+		Parameters: parameters,
+	}
 }
 
 // GroupTask defines the structure for a group of tasks that will be executed in sequence.
-type GroupTask struct {
-	BaseTask
-	// No additional parameters needed for GroupTask since it uses the Children field in BaseTask
+func NewGroupTask(taskId string, description string, children []*Task) *Task {
+	return &Task{
+		BaseTask: BaseTask{
+			TaskId:      taskId,
+			Type:        TaskGroup,
+			Description: description,
+			Children:    children,
+		},
+	}
 }
 
 // OutputResult defines the structure of the result returned after executing a command.
@@ -208,4 +227,141 @@ func (bt *BaseTask) UpdateOutput(output *OutputResult) {
 
 	// Update the task output
 	bt.Output = outputCopy
+}
+
+// MarshalJSON implements custom JSON marshaling for Task to handle dynamic Parameters typing
+func (t *Task) MarshalJSON() ([]byte, error) {
+	// Create a map to hold all fields
+	data := make(map[string]interface{})
+
+	// Add all BaseTask fields
+	data["task_id"] = t.TaskId
+	data["description"] = t.Description
+	data["status"] = t.Status
+	data["type"] = t.Type
+
+	// Add Children if not nil
+	if t.Children != nil {
+		data["children"] = t.Children
+	}
+
+	// Add Output if not empty
+	if t.Output != (OutputResult{}) {
+		data["output"] = t.Output
+	}
+
+	// Add Parameters based on task type
+	if t.Parameters != nil {
+		data["parameters"] = t.Parameters
+	}
+
+	// Marshal the map to JSON
+	return json.Marshal(data)
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for Task
+// It correctly handles the dynamic Parameters field based on TaskType
+func (t *Task) UnmarshalJSON(data []byte) error {
+	// First, unmarshal into a map to get the type field
+	var objMap map[string]json.RawMessage
+	if err := json.Unmarshal(data, &objMap); err != nil {
+		return err
+	}
+
+	// Extract type field to determine parameter type
+	var taskType TaskType
+	if typeData, ok := objMap["type"]; ok {
+		if err := json.Unmarshal(typeData, &taskType); err != nil {
+			return err
+		}
+	}
+
+	// Create task base structure
+	var baseTask BaseTask
+	if err := json.Unmarshal(data, &baseTask); err != nil {
+		return err
+	}
+
+	// Set BaseTask fields
+	t.BaseTask = baseTask
+
+	// Handle parameters based on task type if parameters field exists
+	if paramsData, ok := objMap["parameters"]; ok {
+		switch taskType {
+		case TaskBashExec:
+			var params BashExecParameters
+			if err := json.Unmarshal(paramsData, &params); err != nil {
+				return err
+			}
+			t.Parameters = params
+
+		case TaskFileRead:
+			var params FileReadParameters
+			if err := json.Unmarshal(paramsData, &params); err != nil {
+				return err
+			}
+			t.Parameters = params
+
+		case TaskFileWrite:
+			var params FileWriteParameters
+			if err := json.Unmarshal(paramsData, &params); err != nil {
+				return err
+			}
+			t.Parameters = params
+
+		case TaskPatchFile:
+			var params PatchFileParameters
+			if err := json.Unmarshal(paramsData, &params); err != nil {
+				return err
+			}
+			t.Parameters = params
+
+		case TaskListDirectory:
+			var params ListDirectoryParameters
+			if err := json.Unmarshal(paramsData, &params); err != nil {
+				return err
+			}
+			t.Parameters = params
+
+		case TaskRequestUserInput:
+			var params RequestUserInputParameters
+			if err := json.Unmarshal(paramsData, &params); err != nil {
+				return err
+			}
+			t.Parameters = params
+
+		case TaskGroup:
+			// GroupTask doesn't have parameters - it uses Children
+		}
+	}
+
+	return nil
+}
+
+// ToJSON converts a Task to a JSON string
+func (t *Task) ToJSON() (string, error) {
+	data, err := json.Marshal(t)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// ToPrettyJSON converts a Task to a formatted JSON string with indentation
+func (t *Task) ToPrettyJSON() (string, error) {
+	data, err := json.MarshalIndent(t, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// FromJSON creates a Task from a JSON string
+func FromJSON(jsonStr string) (*Task, error) {
+	task := &Task{}
+	err := json.Unmarshal([]byte(jsonStr), task)
+	if err != nil {
+		return nil, err
+	}
+	return task, nil
 }

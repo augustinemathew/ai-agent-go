@@ -10,6 +10,9 @@ This package defines and executes various tasks asynchronously within the AI age
 - **Logging Improvements**: Removed unnecessary debugging logs from all executors for cleaner code and better performance.
 - **Test Consistency**: Aligned test assertions with current implementation for more reliable testing.
 - **Code Cleanup**: Streamlined executor implementations for better readability and maintainability.
+- **Unified Task Structure**: Consolidated different task types into a single `Task` struct with a dynamic `Parameters` field.
+- **Factory Functions**: Added factory functions (`NewFileReadTask`, `NewFileWriteTask`, etc.) for more ergonomic task creation.
+- **JSON Marshaling/Unmarshaling**: Implemented custom JSON serialization and deserialization for tasks with support for type-based parameter handling.
 
 ## Architectural Improvements
 
@@ -39,6 +42,13 @@ Each executor now follows a more consistent pattern:
 - **Reduced Logging Overhead**: Removed debug logging to improve performance
 - **Efficient Channel Management**: Optimized channel usage to prevent leaks
 - **Simplified Code Paths**: Straightforward execution flow improves maintainability
+
+### Unified Task Structure
+
+- **Single Task Type**: All task types now use a common `Task` struct with a dynamic `Parameters` field
+- **Type-Safe Parameters**: Each task type has its own parameter struct that is type-asserted at runtime
+- **Factory Functions**: New helper functions (`NewFileReadTask`, `NewFileWriteTask`, etc.) make task creation more intuitive
+- **JSON Serialization**: Custom JSON marshaling/unmarshaling based on task type for easy serialization and deserialization
 
 ## Task Mutation During Execution
 
@@ -788,136 +798,45 @@ The GroupExecutor provides a powerful task composition mechanism with the follow
 
 ---
 
-## Usage
+## Task Creation
 
-1.  **Initialization**: Create a `Registry`. All standard executors are registered automatically by `NewMapRegistry`.
-    ```go
-    package main
-
-    import (
-    	"fmt"
-    	"log"
-    	"os"
-    	"time"
-
-    	"your_project/internal/task" // Adjust import path
-    )
-
-    func main() {
-    	// Create registry - standard executors are registered automatically.
-    	registry := task.NewMapRegistry()
-
-    	// Optional: Override or register custom executors if needed
-    	// registry.Register(task.TaskBashExec, myCustomBashExecutor)
-
-    	// ... rest of your application setup
-    }
-
-    ```
-
-2.  **Get Executor**: When you receive a task (e.g., parsed from a JSON request), retrieve the appropriate executor from the registry using the task's type.
-
-    ```go
-    // Assume 'taskType' is determined from the incoming request/data
-    taskType := task.TaskBashExec // Example
-
-    executor, err := registry.GetExecutor(taskType)
-    if err != nil {
-    	log.Fatalf("Error getting executor for type %s: %v", taskType, err)
-        // Handle error appropriately (e.g., return error response)
-    }
-    ```
-
-3.  **Execute Task**: Call the `Execute` method on the retrieved executor, passing a context and the specific task struct (e.g., `BashExecTask`). The `Execute` method requires the task as an `any` type, so you'll typically pass a pointer to your specific task struct.
-
-    ```go
-    import "context"
-
-    // Assume 'cmd' is the specific task struct instance (e.g., BashExecTask)
-    // populated with data (e.g., from a JSON request).
-    bashTask := task.BashExecTask{
-        BaseTask: task.BaseTask{TaskId: "task-123", Description: "List root dir"},
-        Parameters: task.BashExecParameters{
-            Command: "ls -l /",
-        },
-    }
-
-    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // Example timeout
-    defer cancel()
-
-    // Pass a pointer to the task struct
-    resultsChan, err := executor.Execute(ctx, &bashTask)
-    if err != nil {
-    	log.Printf("Error initiating task execution for %s: %v", bashTask.TaskId, err)
-        // Handle initiation error (e.g., invalid task structure)
-        return
-    }
-    ```
-
-4.  **Process Results**: Read results from the returned channel asynchronously. The channel will close when execution is complete (successfully or with failure).
-
-    ```go
-    log.Printf("Waiting for results for task %s...", bashTask.TaskId)
-    for result := range resultsChan {
-    	// Process each result (e.g., log it, send updates via WebSocket, etc.)
-    	log.Printf("Received result: %+v", result)
-
-    	// Check for terminal states using the IsTerminal() helper
-    	if result.Status.IsTerminal() {
-    		log.Printf("Task %s finished with status: %s", result.TaskID, result.Status)
-    		if result.Error != "" {
-    			log.Printf("Error detail: %s", result.Error)
-    		}
-    		break // Or wait if intermediate results are possible after failure (unlikely for most tasks)
-    	}
-    }
-    log.Printf("Result channel closed for task %s.", bashTask.TaskId)
-    ```
-
-## Result Collection Utility
-
-For convenience, especially with streaming tasks (`BASH_EXEC`, `FILE_READ`), the package provides utility functions to simplify consuming the results channel.
-
-These functions read all `OutputResult` messages from the channel until it either closes or the provided `context.Context` is cancelled. It then returns a *single* `OutputResult` summarizing the execution:
-
-*   If the context is cancelled before the channel closes, it returns an `OutputResult` with `StatusFailed`, an error message indicating cancellation (`context.Canceled` or `context.DeadlineExceeded`), and any `ResultData` concatenated *before* cancellation occurred. Other fields are taken from the last message received before cancellation.
-*   If the channel closes normally, the `ResultData` field contains a concatenation of all non-empty `ResultData` strings received from *all* messages (including intermediate `RUNNING` ones). All other fields (`TaskID`, `Status`, `Message`, `Error`) are copied directly from the *last* `OutputResult` message received before the channel closed.
-
-**Example Usage:**
+Tasks can be created using the provided factory functions:
 
 ```go
-    // Assume executor.Execute(ctx, task) was called and returned resultsChan & err
-    if err != nil {
-        // Handle initiation error
-        log.Printf("Error initiating task: %v", err)
-        return
-    }
+// Create a file read task
+readTask := task.NewFileReadTask("read-1", "Read a file", task.FileReadParameters{
+    FilePath: "/path/to/file.txt",
+})
 
-    log.Printf("Waiting for task %s to complete...", task.TaskId) // task is the task struct
+// Create a file write task
+writeTask := task.NewFileWriteTask("write-1", "Write to file", task.FileWriteParameters{
+    FilePath: "/path/to/output.txt",
+    Content:  "Hello, World!",
+})
 
-    // Create a context, perhaps with a timeout
-    // collectionCtx, collectionCancel := context.WithTimeout(context.Background(), 10*time.Second)
-    // defer collectionCancel()
-    collectionCtx := context.Background() // Or use a context passed down
-
-    // Use the utility function to wait for completion or cancellation
-    finalResult := readFinalResult(collectionCtx, resultsChan)
-
-    log.Printf("Task %s finished with status: %s", finalResult.TaskID, finalResult.Status)
-
-    if finalResult.Status == task.StatusSucceeded {
-        log.Printf("Success Message: %s", finalResult.Message)
-        if finalResult.ResultData != "" {
-            log.Printf("Output Data:\n%s", finalResult.ResultData)
-        }
-    } else { // StatusFailed
-        log.Printf("Failure Message: %s", finalResult.Message)
-        log.Printf("Error Details: %s", finalResult.Error)
-        if finalResult.ResultData != "" {
-            log.Printf("Output Data (before failure):\n%s", finalResult.ResultData)
-        }
-    }
+// Create a group task with nested tasks
+groupTask := task.NewGroupTask("group-1", "Group of tasks", []*task.Task{
+    readTask,
+    writeTask,
+})
 ```
+
+## JSON Serialization and Deserialization
+
+The `Task` struct provides methods for easy serialization and deserialization:
+
+```go
+// Convert task to JSON
+jsonStr, err := task.ToJSON()
+
+// Convert task to pretty-printed JSON
+prettyJson, err := task.ToPrettyJSON()
+
+// Parse JSON into a Task
+parsedTask, err := task.FromJSON(jsonStr)
+```
+
+The JSON marshaling and unmarshaling automatically handles the dynamic `Parameters` field based on the task's type.
 
 ## Execution Flow
 

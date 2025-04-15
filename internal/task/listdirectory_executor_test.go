@@ -34,12 +34,9 @@ func TestListDirectoryExecutor_Execute_Success(t *testing.T) {
 	absTempDir, err := filepath.Abs(tempDir)
 	require.NoError(t, err)
 
-	cmd := &ListDirectoryTask{
-		BaseTask: BaseTask{TaskId: "test-list-success-1"},
-		Parameters: ListDirectoryParameters{
-			Path: tempDir,
-		},
-	}
+	cmd := NewListDirectoryTask("test-list-success-1", "Test List Directory", ListDirectoryParameters{
+		Path: tempDir,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -69,12 +66,9 @@ func TestListDirectoryExecutor_Execute_EmptyDir(t *testing.T) {
 	absTempDir, err := filepath.Abs(tempDir)
 	require.NoError(t, err)
 
-	cmd := &ListDirectoryTask{
-		BaseTask: BaseTask{TaskId: "test-list-empty-1"},
-		Parameters: ListDirectoryParameters{
-			Path: tempDir,
-		},
-	}
+	cmd := NewListDirectoryTask("test-list-empty-1", "Test List Directory", ListDirectoryParameters{
+		Path: tempDir,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -97,12 +91,9 @@ func TestListDirectoryExecutor_Execute_NotFound(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	nonExistentPath := filepath.Join(t.TempDir(), "does_not_exist")
 
-	cmd := &ListDirectoryTask{
-		BaseTask: BaseTask{TaskId: "test-list-notfound-1"},
-		Parameters: ListDirectoryParameters{
-			Path: nonExistentPath,
-		},
-	}
+	cmd := NewListDirectoryTask("test-list-notfound-1", "Test List Directory", ListDirectoryParameters{
+		Path: nonExistentPath,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -127,12 +118,9 @@ func TestListDirectoryExecutor_Execute_NotADirectory(t *testing.T) {
 	err := os.WriteFile(filePath, []byte("not a dir"), 0644)
 	require.NoError(t, err, "Failed to create test file")
 
-	cmd := &ListDirectoryTask{
-		BaseTask: BaseTask{TaskId: "test-list-notadir-1"},
-		Parameters: ListDirectoryParameters{
-			Path: filePath, // Attempt to list a file
-		},
-	}
+	cmd := NewListDirectoryTask("test-list-notadir-1", "Test List Directory", ListDirectoryParameters{
+		Path: filePath, // Attempt to list a file
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -154,12 +142,9 @@ func TestListDirectoryExecutor_Execute_Cancellation(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	tempDir := t.TempDir()
 
-	cmd := &ListDirectoryTask{
-		BaseTask: BaseTask{TaskId: "test-list-cancel-1"},
-		Parameters: ListDirectoryParameters{
-			Path: tempDir,
-		},
-	}
+	cmd := NewListDirectoryTask("test-list-cancel-1", "Test List Directory", ListDirectoryParameters{
+		Path: tempDir,
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -182,12 +167,9 @@ func TestListDirectoryExecutor_Execute_Timeout(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	tempDir := t.TempDir()
 
-	cmd := &ListDirectoryTask{
-		BaseTask: BaseTask{TaskId: "test-list-timeout-1"},
-		Parameters: ListDirectoryParameters{
-			Path: tempDir,
-		},
-	}
+	cmd := NewListDirectoryTask("test-list-timeout-1", "Test List Directory", ListDirectoryParameters{
+		Path: tempDir,
+	})
 
 	testTimeout := 1 * time.Millisecond
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
@@ -209,13 +191,10 @@ func TestListDirectoryExecutor_Execute_Timeout(t *testing.T) {
 func TestListDirectoryExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewListDirectoryExecutor()
 	// Create a command of the wrong type
-	cmd := FileWriteTask{
-		BaseTask: BaseTask{TaskId: "test-write-1"},
-		Parameters: FileWriteParameters{
-			FilePath: "some/path",
-			Content:  "test content",
-		},
-	}
+	cmd := NewFileWriteTask("test-write-1", "Test File Write", FileWriteParameters{
+		FilePath: "some/path",
+		Content:  "test content",
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 
@@ -246,21 +225,16 @@ func TestListDirectoryExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := &ListDirectoryTask{
-				BaseTask: BaseTask{
-					TaskId:      "terminal-listdir-test",
-					Description: "Terminal listdirectory task test",
-					Status:      tc.status,
-					Output: OutputResult{
-						TaskID:  "terminal-listdir-test",
-						Status:  tc.status,
-						Message: "Pre-existing terminal state",
-					},
-				},
-				Parameters: ListDirectoryParameters{
-					Path: "nonexistent/directory", // Should not try to list this
-				},
-			}
+			cmd := NewListDirectoryTask("terminal-listdir-test", "Terminal listdirectory task test", ListDirectoryParameters{
+				Path: "nonexistent/directory", // Should not try to list this
+			})
+
+			cmd.Status = tc.status
+			cmd.UpdateOutput(&OutputResult{
+				TaskID:  cmd.TaskId,
+				Status:  tc.status,
+				Message: "Pre-existing terminal state",
+			})
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)
 			require.NoError(t, err, "Execute should not return an error for terminal tasks")

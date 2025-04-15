@@ -85,14 +85,9 @@ func TestFileReadExecutor_Execute_Success(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	task := &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId: "read-test-1",
-		},
-		Parameters: FileReadParameters{
-			FilePath: tempFile,
-		},
-	}
+	task := NewFileReadTask("read-test-1", "Test file read", FileReadParameters{
+		FilePath: tempFile,
+	})
 
 	executor := NewFileReadExecutor()
 	ctx := context.Background()
@@ -134,16 +129,9 @@ func TestFileReadExecutor_Execute_Success_MultiChunk(t *testing.T) {
 	fileSize := 15 * 1024
 	tempFilePath, expectedContent := createLargeTempFile(t, fileSize)
 
-	cmd := &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-read-multichunk-1",
-			Description: "Test multi-chunk file read",
-			Status:      StatusPending,
-		},
-		Parameters: FileReadParameters{
-			FilePath: tempFilePath,
-		},
-	}
+	cmd := NewFileReadTask("test-read-multichunk-1", "Test multi-chunk file read", FileReadParameters{
+		FilePath: tempFilePath,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -168,16 +156,9 @@ func TestFileReadExecutor_Execute_EmptyFile(t *testing.T) {
 	expectedContent := ""
 	tempFilePath := createTempFile(t, expectedContent)
 
-	cmd := &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-read-empty-1",
-			Description: "Test empty file read",
-			Status:      StatusPending,
-		},
-		Parameters: FileReadParameters{
-			FilePath: tempFilePath,
-		},
-	}
+	cmd := NewFileReadTask("test-read-empty-1", "Test empty file read", FileReadParameters{
+		FilePath: tempFilePath,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -195,16 +176,9 @@ func TestFileReadExecutor_Execute_FileNotFound(t *testing.T) {
 	executor := NewFileReadExecutor()
 	nonExistentPath := filepath.Join(t.TempDir(), "non_existent_file.txt")
 
-	cmd := &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-read-notfound-1",
-			Description: "Test file not found",
-			Status:      StatusPending,
-		},
-		Parameters: FileReadParameters{
-			FilePath: nonExistentPath,
-		},
-	}
+	cmd := NewFileReadTask("test-read-notfound-1", "Test file not found", FileReadParameters{
+		FilePath: nonExistentPath,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed") // Setup itself shouldn't fail
@@ -226,16 +200,9 @@ func TestFileReadExecutor_Execute_Cancellation(t *testing.T) {
 	fileSize := 50 * 1024 // 50KB
 	tempFilePath, expectedContent := createLargeTempFile(t, fileSize)
 
-	cmd := &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-read-cancel-1",
-			Description: "Test file read cancellation",
-			Status:      StatusPending,
-		},
-		Parameters: FileReadParameters{
-			FilePath: tempFilePath,
-		},
-	}
+	cmd := NewFileReadTask("test-read-cancel-1", "Test file read cancellation", FileReadParameters{
+		FilePath: tempFilePath,
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -268,16 +235,9 @@ func TestFileReadExecutor_Execute_Timeout(t *testing.T) {
 	fileSize := 55 * 1024
 	tempFilePath, expectedContent := createLargeTempFile(t, fileSize)
 
-	cmd := &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-read-timeout-1",
-			Description: "Test file read timeout",
-			Status:      StatusPending,
-		},
-		Parameters: FileReadParameters{
-			FilePath: tempFilePath,
-		},
-	}
+	cmd := NewFileReadTask("test-read-timeout-1", "Test file read timeout", FileReadParameters{
+		FilePath: tempFilePath,
+	})
 
 	testTimeout := 50 * time.Millisecond // Slightly longer timeout than 1ms to allow first chunk read
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
@@ -365,12 +325,9 @@ Assertions:
 func TestFileReadExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewFileReadExecutor()
 	// Create a command of the wrong type
-	cmd := BashExecTask{
-		BaseTask: BaseTask{TaskId: "invalid-read-type-1"},
-		Parameters: BashExecParameters{
-			Command: "echo hello",
-		},
-	}
+	cmd := NewBashExecTask("invalid-read-type-1", "Invalid read type", BashExecParameters{
+		Command: "echo hello",
+	})
 
 	// Pass context, although it won't be used here as error is immediate
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -432,18 +389,11 @@ func TestFileReadExecutor_LineBasedReading(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &FileReadTask{
-				BaseTask: BaseTask{
-					TaskId:      "test-read-lines-" + tt.name,
-					Description: "Test line-based file read",
-					Status:      StatusPending,
-				},
-				Parameters: FileReadParameters{
-					FilePath:  tempFilePath,
-					StartLine: tt.startLine,
-					EndLine:   tt.endLine,
-				},
-			}
+			cmd := NewFileReadTask("test-read-lines-"+tt.name, "Test line-based file read", FileReadParameters{
+				FilePath:  tempFilePath,
+				StartLine: tt.startLine,
+				EndLine:   tt.endLine,
+			})
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)
 			require.NoError(t, err, "Execute setup failed")
@@ -470,16 +420,9 @@ func TestFileReadExecutor_ContextCancellation_FinalStatus(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executor := NewFileReadExecutor()
-	cmd := &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-cancel-final-status",
-			Description: "Test file read cancellation final status",
-			Status:      StatusPending,
-		},
-		Parameters: FileReadParameters{
-			FilePath: tempFilePath,
-		},
-	}
+	cmd := NewFileReadTask("test-cancel-final-status", "Test file read cancellation final status", FileReadParameters{
+		FilePath: tempFilePath,
+	})
 
 	resultsChan, err := executor.Execute(ctx, cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -557,19 +500,12 @@ func TestFileReadExecutor_RelativePathHandling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := &FileReadTask{
-				BaseTask: BaseTask{
-					TaskId:      "test-relative-path-" + tt.name,
-					Description: "Test relative path handling",
-					Status:      StatusPending,
+			cmd := NewFileReadTask("test-relative-path-"+tt.name, "Test relative path handling", FileReadParameters{
+				BaseParameters: BaseParameters{
+					WorkingDirectory: tt.workingDir,
 				},
-				Parameters: FileReadParameters{
-					BaseParameters: BaseParameters{
-						WorkingDirectory: tt.workingDir,
-					},
-					FilePath: tt.filePath,
-				},
-			}
+				FilePath: tt.filePath,
+			})
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)
 			require.NoError(t, err, "Execute setup failed")
@@ -613,20 +549,15 @@ func TestFileReadExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := &FileReadTask{
-				BaseTask: BaseTask{
-					TaskId:      "terminal-fileread-test",
-					Description: "Terminal fileread task test",
-					Status:      tc.status,
-					Output: OutputResult{
-						TaskID:  "terminal-fileread-test",
-						Status:  tc.status,
-						Message: "Pre-existing terminal state",
-					},
-				},
-				Parameters: FileReadParameters{
-					FilePath: "nonexistent/file.txt", // Should not try to read this
-				},
+			cmd := NewFileReadTask("terminal-fileread-test", "Terminal fileread task test", FileReadParameters{
+				FilePath: "nonexistent/file.txt", // Should not try to read this
+			})
+
+			cmd.Status = tc.status
+			cmd.Output = OutputResult{
+				TaskID:  cmd.TaskId,
+				Status:  tc.status,
+				Message: "Pre-existing terminal state",
 			}
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)

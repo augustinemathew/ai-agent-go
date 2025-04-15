@@ -44,15 +44,9 @@ func TestRequestUserInputExecutor_Execute(t *testing.T) {
 			defer cancel()
 
 			// Create the command with the prompt from the test case
-			cmd := &RequestUserInputTask{
-				BaseTask: BaseTask{
-					TaskId:      tt.taskId,
-					Description: tt.description,
-				},
-				Parameters: RequestUserInputParameters{
-					Prompt: tt.prompt,
-				},
-			}
+			cmd := NewRequestUserInputTask(tt.taskId, tt.description, RequestUserInputParameters{
+				Prompt: tt.prompt,
+			})
 
 			resultsChan, err := executor.Execute(ctx, cmd)
 			require.NoError(t, err, "Execute should not return an error")
@@ -77,15 +71,9 @@ func TestRequestUserInputExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewRequestUserInputExecutor()
 
 	// Try to execute a command of the wrong type
-	resultsChan, err := executor.Execute(context.Background(), &FileReadTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-invalid",
-			Description: "Invalid command type",
-		},
-		Parameters: FileReadParameters{
-			FilePath: "test.txt",
-		},
-	})
+	resultsChan, err := executor.Execute(context.Background(), NewFileReadTask("test-invalid", "Invalid command type", FileReadParameters{
+		FilePath: "test.txt",
+	}))
 
 	require.Error(t, err, "Should return error for invalid command type")
 	assert.Nil(t, resultsChan, "Should not return a results channel")
@@ -94,15 +82,9 @@ func TestRequestUserInputExecutor_Execute_InvalidCommandType(t *testing.T) {
 
 func TestRequestUserInputExecutor_Execute_ContextCancellation(t *testing.T) {
 	executor := NewRequestUserInputExecutor()
-	cmd := &RequestUserInputTask{
-		BaseTask: BaseTask{
-			TaskId:      "test-cancel",
-			Description: "Test cancellation",
-		},
-		Parameters: RequestUserInputParameters{
-			Prompt: "This should be cancelled",
-		},
-	}
+	cmd := NewRequestUserInputTask("test-cancel", "Test cancellation", RequestUserInputParameters{
+		Prompt: "This should be cancelled",
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -119,7 +101,7 @@ func TestRequestUserInputExecutor_Execute_ContextCancellation(t *testing.T) {
 	// Verify the result
 	assert.Equal(t, cmd.TaskId, finalResult.TaskID)
 	assert.Equal(t, StatusSucceeded, finalResult.Status)
-	assert.Equal(t, cmd.Parameters.Prompt, finalResult.Message)
+	assert.Equal(t, cmd.Parameters.(RequestUserInputParameters).Prompt, finalResult.Message)
 	assert.Empty(t, finalResult.Error)
 	assert.Empty(t, finalResult.ResultData)
 }
@@ -147,21 +129,16 @@ func TestRequestUserInputExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := &RequestUserInputTask{
-				BaseTask: BaseTask{
-					TaskId:      "terminal-userinput-test",
-					Description: "Terminal userinput task test",
-					Status:      tc.status,
-					Output: OutputResult{
-						TaskID:  "terminal-userinput-test",
-						Status:  tc.status,
-						Message: "Pre-existing terminal state",
-					},
-				},
-				Parameters: RequestUserInputParameters{
-					Prompt: "This prompt should not be shown",
-				},
-			}
+			cmd := NewRequestUserInputTask("terminal-userinput-test", "Terminal userinput task test", RequestUserInputParameters{
+				Prompt: "This prompt should not be shown",
+			})
+
+			cmd.Status = tc.status
+			cmd.UpdateOutput(&OutputResult{
+				TaskID:  cmd.TaskId,
+				Status:  tc.status,
+				Message: "Pre-existing terminal state",
+			})
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)
 			require.NoError(t, err, "Execute should not return an error for terminal tasks")

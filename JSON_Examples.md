@@ -478,4 +478,65 @@ Group tasks provide status updates as child tasks complete, allowing for real-ti
 2. **Progress Updates**: As each child task completes, the group task sends a RUNNING status update with the child's status.
 3. **Final Status**: After all child tasks complete, the group task sends a final status of SUCCEEDED (if all children succeeded) or FAILED (if any child failed).
 
-This status propagation makes it easy to monitor complex nested task hierarchies in real-time. 
+This status propagation makes it easy to monitor complex nested task hierarchies in real-time.
+
+## JSON Serialization and Deserialization
+
+The Task struct provides built-in methods for JSON serialization and deserialization.
+
+### Serialize Task to JSON
+
+```go
+// Create a task using a factory function
+task := task.NewFileWriteTask("write-example", "Write to a file", task.FileWriteParameters{
+    FilePath: "/path/to/file.txt",
+    Content:  "Hello, World!",
+})
+
+// Convert task to JSON
+jsonStr, err := task.ToJSON()
+if err != nil {
+    log.Fatalf("Failed to serialize task: %v", err)
+}
+fmt.Println(jsonStr)
+
+// Convert task to pretty-printed JSON
+prettyJson, err := task.ToPrettyJSON()
+if err != nil {
+    log.Fatalf("Failed to serialize task: %v", err)
+}
+fmt.Println(prettyJson)
+```
+
+### Deserialize JSON to Task
+
+```go
+jsonStr := `{
+  "task_id": "read-example",
+  "description": "Read a file",
+  "type": "FILE_READ",
+  "parameters": {
+    "file_path": "/path/to/file.txt"
+  }
+}`
+
+// Parse JSON into a Task object
+parsedTask, err := task.FromJSON(jsonStr)
+if err != nil {
+    log.Fatalf("Failed to parse JSON: %v", err)
+}
+
+// Access the parsed task
+fmt.Printf("Task ID: %s\n", parsedTask.TaskId)
+fmt.Printf("Task Type: %s\n", parsedTask.Type)
+
+// Type assert parameters based on task type
+if parsedTask.Type == task.TaskFileRead {
+    params, ok := parsedTask.Parameters.(task.FileReadParameters)
+    if ok {
+        fmt.Printf("File Path: %s\n", params.FilePath)
+    }
+}
+```
+
+The JSON serialization and deserialization automatically handles the dynamic Parameters field based on the task's Type. This makes it easy to transfer tasks between different parts of the system or store them in a database. 

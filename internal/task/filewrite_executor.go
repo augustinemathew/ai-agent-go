@@ -47,11 +47,14 @@ func NewFileWriteExecutor() *FileWriteExecutor {
 
 // Execute implements the Executor interface for FileWriteCommand.
 func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	var fileWriteCmd *FileWriteTask
+	var fileWriteCmd *Task
 	switch v := cmd.(type) {
-	case *FileWriteTask:
+	case *Task:
 		fileWriteCmd = v
 	default:
+		return nil, fmt.Errorf(errFileWriteInvalidCommandType)
+	}
+	if fileWriteCmd.Type != TaskFileWrite {
 		return nil, fmt.Errorf(errFileWriteInvalidCommandType)
 	}
 
@@ -80,7 +83,7 @@ func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		}
 
 		// Resolve the file path
-		resolvedPath, err := fileutils.ResolveFilePath(fileWriteCmd.Parameters.FilePath, fileWriteCmd.Parameters.WorkingDirectory)
+		resolvedPath, err := fileutils.ResolveFilePath(fileWriteCmd.Parameters.(FileWriteParameters).FilePath, fileWriteCmd.Parameters.(FileWriteParameters).WorkingDirectory)
 		if err != nil {
 			finalResult := createFinalResult(fileWriteCmd.TaskId, resolvedPath, fmt.Errorf(errFileWriteResolveFilePath, err), time.Since(startTime))
 			fileWriteCmd.Status = finalResult.Status
@@ -99,7 +102,7 @@ func (e *FileWriteExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		}
 
 		// Write the file
-		if err := writeFileContent(ctx, resolvedPath, fileWriteCmd.Parameters.Content); err != nil {
+		if err := writeFileContent(ctx, resolvedPath, fileWriteCmd.Parameters.(FileWriteParameters).Content); err != nil {
 			finalResult := createFinalResult(fileWriteCmd.TaskId, resolvedPath, err, time.Since(startTime))
 			fileWriteCmd.Status = finalResult.Status
 			fileWriteCmd.UpdateOutput(&finalResult)

@@ -411,7 +411,7 @@ func NewPatchFileExecutor() *PatchFileExecutor {
 // --- Helper Functions ---
 
 // formatResult creates an OutputResult with the given parameters.
-func formatResult(cmd *PatchFileTask, status TaskStatus, message string, err error) OutputResult {
+func formatResult(cmd *Task, status TaskStatus, message string, err error) OutputResult {
 	var errMsg string
 	if err != nil {
 		errMsg = err.Error()
@@ -433,11 +433,15 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 	results := make(chan OutputResult, 1)
 
 	// Validate command type
-	var patchCmd *PatchFileTask
+	var patchCmd *Task
 	switch c := cmd.(type) {
-	case *PatchFileTask:
+	case *Task:
 		patchCmd = c
 	default:
+		return nil, fmt.Errorf("invalid command type: expected *PatchFileTask, got %T", cmd)
+	}
+
+	if patchCmd.Type != TaskPatchFile {
 		return nil, fmt.Errorf("invalid command type: expected *PatchFileTask, got %T", cmd)
 	}
 
@@ -451,7 +455,7 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 	}
 
 	// Validate file path
-	if patchCmd.Parameters.FilePath == "" {
+	if patchCmd.Parameters.(PatchFileParameters).FilePath == "" {
 		return nil, errors.New(errEmptyFilePath)
 	}
 
@@ -469,7 +473,7 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		}
 
 		// Lock the file for exclusive access
-		unlock, err := e.fs.LockFile(patchCmd.Parameters.FilePath)
+		unlock, err := e.fs.LockFile(patchCmd.Parameters.(PatchFileParameters).FilePath)
 		if err != nil {
 			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to lock file: %v", err), err)
 			patchCmd.Status = finalResult.Status
@@ -480,7 +484,7 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		defer unlock()
 
 		// Read original file
-		originalContent, err := e.readOriginalFile(patchCmd.Parameters.FilePath)
+		originalContent, err := e.readOriginalFile(patchCmd.Parameters.(PatchFileParameters).FilePath)
 		if err != nil {
 			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to read original file: %v", err), err)
 			patchCmd.Status = finalResult.Status
@@ -499,7 +503,7 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		}
 
 		// Apply patch
-		patchedContent, err := e.applyPatch(originalContent, []byte(patchCmd.Parameters.Patch))
+		patchedContent, err := e.applyPatch(originalContent, []byte(patchCmd.Parameters.(PatchFileParameters).Patch))
 		if err != nil {
 			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to apply patch: %v", err), err)
 			patchCmd.Status = finalResult.Status
@@ -518,7 +522,7 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		}
 
 		// Write patched file
-		if err := e.writePatchedFile(patchCmd.Parameters.FilePath, patchedContent); err != nil {
+		if err := e.writePatchedFile(patchCmd.Parameters.(PatchFileParameters).FilePath, patchedContent); err != nil {
 			finalResult := formatResult(patchCmd, StatusFailed, fmt.Sprintf("Failed to write patched file: %v", err), err)
 			patchCmd.Status = finalResult.Status
 			patchCmd.UpdateOutput(&finalResult)
@@ -527,7 +531,7 @@ func (e *PatchFileExecutor) Execute(ctx context.Context, cmd any) (<-chan Output
 		}
 
 		// Send success result
-		finalResult := formatResult(patchCmd, StatusSucceeded, fmt.Sprintf("Successfully patched file %s", patchCmd.Parameters.FilePath), nil)
+		finalResult := formatResult(patchCmd, StatusSucceeded, fmt.Sprintf("Successfully patched file %s", patchCmd.Parameters.(PatchFileParameters).FilePath), nil)
 		patchCmd.Status = finalResult.Status
 		patchCmd.UpdateOutput(&finalResult)
 		results <- finalResult

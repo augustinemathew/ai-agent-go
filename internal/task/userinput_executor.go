@@ -26,8 +26,12 @@ func NewRequestUserInputExecutor() *RequestUserInputExecutor {
 // this method just returns the prompt message.
 func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
 	// Type assertion to ensure we have a RequestUserInputTask command
-	userInputCmd, ok := cmd.(*RequestUserInputTask)
+	userInputCmd, ok := cmd.(*Task)
 	if !ok {
+		return nil, fmt.Errorf(errUserInputInvalidCommandType, cmd)
+	}
+
+	if userInputCmd.Type != TaskRequestUserInput {
 		return nil, fmt.Errorf(errUserInputInvalidCommandType, cmd)
 	}
 
@@ -53,7 +57,7 @@ func (e *RequestUserInputExecutor) Execute(ctx context.Context, cmd any) (<-chan
 		results <- OutputResult{
 			TaskID:  userInputCmd.TaskId,
 			Status:  StatusSucceeded,
-			Message: userInputCmd.Parameters.Prompt,
+			Message: userInputCmd.Parameters.(RequestUserInputParameters).Prompt,
 		}
 	}()
 

@@ -69,14 +69,11 @@ func TestFileWriteExecutor_Execute_Success(t *testing.T) {
 	tempFilePath := filepath.Join(tempDir, "test_write_success.txt")
 	expectedContent := "Hello, world!\nThis is a test."
 
-	cmd := &FileWriteTask{
-		BaseTask: BaseTask{TaskId: "test-write-success-1"},
-		Parameters: FileWriteParameters{
-			FilePath:  tempFilePath,
-			Content:   expectedContent,
-			Overwrite: false,
-		},
-	}
+	cmd := NewFileWriteTask("test-write-success-1", "Test File Write Success", FileWriteParameters{
+		FilePath:  tempFilePath,
+		Content:   expectedContent,
+		Overwrite: false,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -107,14 +104,11 @@ func TestFileWriteExecutor_Execute_Overwrite(t *testing.T) {
 	err := os.WriteFile(tempFilePath, []byte(initialContent), 0644)
 	require.NoError(t, err, "Failed to create initial file")
 
-	cmd := &FileWriteTask{
-		BaseTask: BaseTask{TaskId: "test-write-overwrite-1"},
-		Parameters: FileWriteParameters{
-			FilePath:  tempFilePath,
-			Content:   newContent,
-			Overwrite: true,
-		},
-	}
+	cmd := NewFileWriteTask("test-write-overwrite-1", "Test File Write Overwrite", FileWriteParameters{
+		FilePath:  tempFilePath,
+		Content:   newContent,
+		Overwrite: true,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -137,14 +131,11 @@ func TestFileWriteExecutor_Execute_DirectoryNotFound(t *testing.T) {
 	// Path to a file within a non-existent directory
 	nonExistentDirPath := filepath.Join(tempDir, "non_existent_dir", "test_write_fail.txt")
 
-	cmd := &FileWriteTask{
-		BaseTask: BaseTask{TaskId: "test-write-dirfail-1"},
-		Parameters: FileWriteParameters{
-			FilePath:  nonExistentDirPath,
-			Content:   "This should not be written.",
-			Overwrite: false,
-		},
-	}
+	cmd := NewFileWriteTask("test-write-dirfail-1", "Test File Write Directory Not Found", FileWriteParameters{
+		FilePath:  nonExistentDirPath,
+		Content:   "This should not be written.",
+		Overwrite: false,
+	})
 
 	resultsChan, err := executor.Execute(context.Background(), cmd)
 	require.NoError(t, err, "Execute setup failed")
@@ -168,13 +159,10 @@ func TestFileWriteExecutor_Execute_Cancellation(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFilePath := filepath.Join(tempDir, "test_write_cancel.txt")
 
-	cmd := &FileWriteTask{
-		BaseTask: BaseTask{TaskId: "test-write-cancel-1"},
-		Parameters: FileWriteParameters{
-			FilePath: tempFilePath,
-			Content:  "This might be partially written if cancel is slow, but likely not written.",
-		},
-	}
+	cmd := NewFileWriteTask("test-write-cancel-1", "Test File Write Cancellation", FileWriteParameters{
+		FilePath: tempFilePath,
+		Content:  "This might be partially written if cancel is slow, but likely not written.",
+	})
 
 	// Create a cancellable context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -203,13 +191,10 @@ func TestFileWriteExecutor_Execute_Timeout(t *testing.T) {
 	tempDir := t.TempDir()
 	tempFilePath := filepath.Join(tempDir, "test_write_timeout.txt")
 
-	cmd := &FileWriteTask{
-		BaseTask: BaseTask{TaskId: "test-write-timeout-1"},
-		Parameters: FileWriteParameters{
-			FilePath: tempFilePath,
-			Content:  "This content should not be written due to timeout.",
-		},
-	}
+	cmd := NewFileWriteTask("test-write-timeout-1", "Test File Write Timeout", FileWriteParameters{
+		FilePath: tempFilePath,
+		Content:  "This content should not be written due to timeout.",
+	})
 
 	// Use a very short timeout
 	testTimeout := 1 * time.Microsecond
@@ -239,12 +224,9 @@ func TestFileWriteExecutor_Execute_Timeout(t *testing.T) {
 func TestFileWriteExecutor_Execute_InvalidCommandType(t *testing.T) {
 	executor := NewFileWriteExecutor()
 	// Create a command of the wrong type
-	cmd := FileReadTask{
-		BaseTask: BaseTask{TaskId: "invalid-write-type-1"},
-		Parameters: FileReadParameters{
-			FilePath: "some/path",
-		},
-	}
+	cmd := NewFileReadTask("invalid-write-type-1", "Invalid write type", FileReadParameters{
+		FilePath: "some/path",
+	})
 
 	// Pass context, although it won't be used here as error is immediate
 	resultsChan, err := executor.Execute(context.Background(), cmd)
@@ -277,22 +259,16 @@ func TestFileWriteExecutor_Execute_TerminalTaskHandling(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a task that's already in a terminal state
-			cmd := &FileWriteTask{
-				BaseTask: BaseTask{
-					TaskId:      "terminal-filewrite-test",
-					Description: "Terminal filewrite task test",
-					Status:      tc.status,
-					Output: OutputResult{
-						TaskID:  "terminal-filewrite-test",
-						Status:  tc.status,
-						Message: "Pre-existing terminal state",
-					},
-				},
-				Parameters: FileWriteParameters{
-					FilePath: "nonexistent/directory/file.txt", // Should not try to write this
-					Content:  "This should not be written",
-				},
+			cmd := NewFileWriteTask("terminal-filewrite-test", "Terminal filewrite task test", FileWriteParameters{
+				FilePath: "nonexistent/directory/file.txt", // Should not try to write this
+				Content:  "This should not be written",
+			})
+			cmd.Output = OutputResult{
+				TaskID:  "terminal-filewrite-test",
+				Status:  tc.status,
+				Message: "Pre-existing terminal state",
 			}
+			cmd.Status = tc.status
 
 			resultsChan, err := executor.Execute(context.Background(), cmd)
 			require.NoError(t, err, "Execute should not return an error for terminal tasks")

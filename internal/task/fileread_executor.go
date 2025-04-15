@@ -43,8 +43,11 @@ func NewFileReadExecutor() *FileReadExecutor {
 // Returns a channel for results and an error if the command type is wrong or execution setup fails.
 // The execution respects cancellation signals from the passed context.Context.
 func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputResult, error) {
-	fileReadCmd, ok := cmd.(*FileReadTask)
+	fileReadCmd, ok := cmd.(*Task)
 	if !ok {
+		return nil, fmt.Errorf(errInvalidCommandType, cmd)
+	}
+	if fileReadCmd.Type != TaskFileRead {
 		return nil, fmt.Errorf(errInvalidCommandType, cmd)
 	}
 
@@ -60,7 +63,7 @@ func (e *FileReadExecutor) Execute(ctx context.Context, cmd any) (<-chan OutputR
 }
 
 // executeFileRead handles the actual file reading process in a separate goroutine.
-func (e *FileReadExecutor) executeFileRead(ctx context.Context, cmd *FileReadTask, results chan<- OutputResult) {
+func (e *FileReadExecutor) executeFileRead(ctx context.Context, cmd *Task, results chan<- OutputResult) {
 	defer close(results)
 
 	// Update task status to Running
@@ -85,13 +88,13 @@ func (e *FileReadExecutor) executeFileRead(ctx context.Context, cmd *FileReadTas
 		return
 	}
 
-	if err := validateLineNumbers(cmd.Parameters); err != nil {
+	if err := validateLineNumbers(cmd.Parameters.(FileReadParameters)); err != nil {
 		finalErr = fmt.Errorf("line number validation failed: %w", err)
 		return
 	}
 
 	// Resolve the file path
-	absPath, err := fileutils.ResolveFilePath(cmd.Parameters.FilePath, cmd.Parameters.WorkingDirectory)
+	absPath, err := fileutils.ResolveFilePath(cmd.Parameters.(FileReadParameters).FilePath, cmd.Parameters.(FileReadParameters).WorkingDirectory)
 	if err != nil {
 		finalErr = fmt.Errorf("file path resolution failed: %w", err)
 		return
@@ -124,17 +127,17 @@ func validateLineNumbers(params FileReadParameters) error {
 }
 
 // readAndStreamFile reads the file and streams its content to the results channel.
-func (e *FileReadExecutor) readAndStreamFile(ctx context.Context, cmd *FileReadTask, file *os.File, results chan<- OutputResult) error {
+func (e *FileReadExecutor) readAndStreamFile(ctx context.Context, cmd *Task, file *os.File, results chan<- OutputResult) error {
 	scanner := bufio.NewScanner(file)
 	currentLine := 1
 
 	// Skip to start line
-	for currentLine < cmd.Parameters.StartLine && scanner.Scan() {
+	for currentLine < cmd.Parameters.(FileReadParameters).StartLine && scanner.Scan() {
 		currentLine++
 	}
 
-	if currentLine < cmd.Parameters.StartLine {
-		return fmt.Errorf(errFileTooShort, cmd.Parameters.StartLine)
+	if currentLine < cmd.Parameters.(FileReadParameters).StartLine {
+		return fmt.Errorf(errFileTooShort, cmd.Parameters.(FileReadParameters).StartLine)
 	}
 
 	// Read and stream lines
@@ -149,7 +152,7 @@ func (e *FileReadExecutor) readAndStreamFile(ctx context.Context, cmd *FileReadT
 
 		line := scanner.Text() + "\n"
 
-		if cmd.Parameters.EndLine > 0 && currentLine > cmd.Parameters.EndLine {
+		if cmd.Parameters.(FileReadParameters).EndLine > 0 && currentLine > cmd.Parameters.(FileReadParameters).EndLine {
 			break
 		}
 
@@ -175,7 +178,7 @@ func (e *FileReadExecutor) readAndStreamFile(ctx context.Context, cmd *FileReadT
 }
 
 // createFinalResult creates the final OutputResult with appropriate status and message.
-func (e *FileReadExecutor) createFinalResult(cmd *FileReadTask, startTime time.Time, finalErr error) OutputResult {
+func (e *FileReadExecutor) createFinalResult(cmd *Task, startTime time.Time, finalErr error) OutputResult {
 	var status TaskStatus
 	var message string
 	var errMsg string
@@ -202,15 +205,4 @@ func (e *FileReadExecutor) createFinalResult(cmd *FileReadTask, startTime time.T
 		Message: message,
 		Error:   errMsg,
 	}
-}
-
-// sendFinalResult sends the final result with appropriate status and message.
-func (e *FileReadExecutor) sendFinalResult(cmd *FileReadTask, results chan<- OutputResult, startTime time.Time, finalErr error) {
-	finalResult := e.createFinalResult(cmd, startTime, finalErr)
-
-	// Update the task status and output
-	cmd.Status = finalResult.Status
-	cmd.UpdateOutput(&finalResult)
-
-	results <- finalResult
 }
